@@ -1,0 +1,27 @@
+/**
+ * @shuji-bonji/s1000d-core
+ *
+ * S1000D® の CSDB オブジェクトを読むための共通ライブラリ。
+ * s1000d-brex-mcp / reader / verify / writer が共有する。
+ *
+ * S1000D® は ASD の登録商標です。このライブラリは ASD とは無関係で、仕様書・スキーマ・公式サンプルを含みません。
+ */
+export * from './types.js';
+export {
+  BREX_INFO_CODE,
+  formatDmc,
+  formatDmcFileName,
+  isBrexDmc,
+  parseDmc,
+  parseDmcFileName,
+  sameDmc,
+} from './dmc.js';
+export { formatIcn, parseIcn, parseIcnFileName } from './icn.js';
+export { parseSchemaLocation, type SchemaLocationInfo } from './schema-location.js';
+export {
+  readDataModuleInfo,
+  readDmCodeElement,
+  readDmRef,
+  readIdentAndStatus,
+} from './data-module.js';
+export * from './xml/index.js';

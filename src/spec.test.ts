@@ -7,9 +7,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readDataModuleInfo } from './data-module.js';
-import { parseDmcFileName } from './dmc.js';
+import { formatDmc, parseDmcFileName } from './dmc.js';
 import { parseIcnFileName } from './icn.js';
 import { defaultXmlEngine } from './xml/index.js';
+import { checkAgainstBrexChain, readBrex } from './brex/index.js';
+import { createDirectoryBrexResolver } from './csdb.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
 const specDir = resolve(process.env.S1000D_SPEC_DIR ?? '../../specs/s1000d/issue-7');
@@ -74,5 +76,48 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     expect(paths.length).toBeGreaterThan(200);
     const failed = paths.filter((p) => !defaultXmlEngine.validateExpression(p).ok);
     expect(failed).toEqual([]);
+  });
+
+  it('既定 BREX を読み取れる', () => {
+    const brex = readBrex(readFileSync(brexFile, 'utf8'));
+    expect(brex.ok).toBe(true);
+    if (!brex.ok) return;
+    const structure = brex.value.contextRules.reduce((n, c) => n + c.structureRules.length, 0);
+    expect(structure).toBeGreaterThan(200);
+    expect(brex.value.nonContextRules.length).toBeGreaterThanOrEqual(1);
+    // 既定 BREX は自分自身を参照する（連鎖の終端）
+    expect(brex.value.brexDmRef?.dmCode.infoCode).toBe('022');
+    expect(brex.value.brexDmRef?.dmCode.modelIdentCode).toBe('S1000D');
+  });
+
+  it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {
+    const resolve = createDirectoryBrexResolver([specDir]);
+    const problems: string[] = [];
+    let violations = 0;
+    let layersTotal = 0;
+    for (const f of dmFiles) {
+      const report = await checkAgainstBrexChain(readFileSync(f, 'utf8'), resolve);
+      layersTotal += report.layers.length;
+      for (const u of report.unresolved) {
+        // Front Matter Samples とビジネスルール文書の雛形は、古い版の既定 BREX（S1000D-F / -H）を
+        // 参照しており、Issue 7 の配布物には無い。既定 BREX 以外の未解決だけを問題として扱う
+        if (u.dmCode.modelIdentCode !== 'S1000D') {
+          problems.push(`${f}: unresolved BREX ${formatDmc(u.dmCode)}`);
+        }
+      }
+      for (const layer of report.layers) {
+        for (const s of layer.skipped)
+          problems.push(`${f}: skipped ${s.objectPath.slice(0, 60)}: ${s.error}`);
+        violations += layer.violations.length;
+      }
+    }
+    expect(problems).toEqual([]);
+    // Bike Samples は「自転車の BREX → 既定 BREX」の 2 層。Front Matter は未解決で 0 層になり得る
+    expect(layersTotal).toBeGreaterThanOrEqual(
+      dmFiles.filter((f) => /Bike Samples/.test(f)).length * 2,
+    );
+    expect(layersTotal).toBeLessThan(dmFiles.length * 4); // 循環していないこと
+    // 公式サンプルにも既定 BREX への違反は少数ある（2026-10-23 の実測で数十件）。件数は固定しない
+    expect(violations).toBeGreaterThanOrEqual(0);
   });
 });

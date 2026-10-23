@@ -43,9 +43,15 @@ export class XmldomFontoxpathEngine implements XmlEngine {
   }
 
   evaluate(expression: string, context: Node): XPathValue {
+    // 1. まず節点集合として評価する。ANY_TYPE は属性を文字列に原子化してしまい、
+    //    違反箇所（行番号・パス）を失うため、節点が得られるならそれを優先する。
     try {
-      // ANY_TYPE: 節点集合は配列、原子値はそのまま返る。
-      // ただし節点 1 つの結果は配列に包まれず節点そのものが返るので、ここで配列に揃える。
+      return evaluateXPath(expression, context, null, null, evaluateXPath.NODES_TYPE) as Node[];
+    } catch {
+      // 節点集合でない結果（真偽値・数値・文字列）か、構文エラー。次で判別する
+    }
+    try {
+      // 2. ANY_TYPE: 原子値はそのまま返る。節点 1 つの結果は配列に包まれないので揃える
       const r: unknown = evaluateXPath(expression, context, null, null, evaluateXPath.ANY_TYPE);
       if (r !== null && typeof r === 'object' && !Array.isArray(r) && 'nodeType' in (r as object)) {
         return [r as Node];

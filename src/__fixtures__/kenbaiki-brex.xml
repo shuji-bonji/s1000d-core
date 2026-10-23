@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 自作のテスト用 BREX（券売機プロジェクト）。上位に kenbaiki-base-brex.xml（組織の BREX）を参照する。 -->
+<dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_7/xml_schema_flat/brex.xsd">
+  <identAndStatusSection>
+    <dmAddress>
+      <dmIdent>
+        <dmCode modelIdentCode="KENBAIKI" systemDiffCode="A" systemCode="00" subSystemCode="0"
+          subSubSystemCode="0" assyCode="00" disassyCode="00" disassyCodeVariant="A" infoCode="022"
+          infoCodeVariant="A" itemLocationCode="D"/>
+        <language languageIsoCode="ja" countryIsoCode="JP"/>
+        <issueInfo issueNumber="001" inWork="00"/>
+      </dmIdent>
+      <dmAddressItems>
+        <issueDate year="2026" month="10" day="23"/>
+        <dmTitle>
+          <techName>指定席券売機</techName>
+          <infoName>ビジネスルール</infoName>
+        </dmTitle>
+      </dmAddressItems>
+    </dmAddress>
+    <dmStatus issueType="new">
+      <security securityClassification="01"/>
+      <responsiblePartnerCompany enterpriseCode="K0001"><enterpriseName>Kenbaiki Works</enterpriseName></responsiblePartnerCompany>
+      <originator enterpriseCode="K0001"><enterpriseName>Kenbaiki Works</enterpriseName></originator>
+      <applic><displayText><simplePara>All</simplePara></displayText></applic>
+      <brexDmRef>
+        <dmRef>
+          <dmRefIdent>
+            <dmCode modelIdentCode="KBWORKS" systemDiffCode="A" systemCode="00" subSystemCode="0"
+              subSubSystemCode="0" assyCode="00" disassyCode="00" disassyCodeVariant="A" infoCode="022"
+              infoCodeVariant="A" itemLocationCode="D"/>
+          </dmRefIdent>
+        </dmRef>
+      </brexDmRef>
+      <qualityAssurance><unverified/></qualityAssurance>
+    </dmStatus>
+  </identAndStatusSection>
+  <content>
+    <brex defaultBrSeverityLevel="brsl02">
+      <commonInfo><para>券売機プロジェクトの規則。組織の規則（KBWORKS）に基づく。</para></commonInfo>
+      <snsRules>
+        <snsDescr>
+          <snsSystem>
+            <snsCode>10</snsCode>
+            <snsTitle>発券部</snsTitle>
+            <snsSubSystem>
+              <snsCode>2</snsCode>
+              <snsTitle>画面</snsTitle>
+              <snsSubSubSystem>
+                <snsCode>0</snsCode>
+                <snsTitle>全般</snsTitle>
+              </snsSubSubSystem>
+            </snsSubSystem>
+          </snsSystem>
+        </snsDescr>
+      </snsRules>
+      <contextRules>
+        <structureObjectRuleGroup>
+          <structureObjectRule brSeverityLevel="brsl01">
+            <brDecisionRef brDecisionIdentNumber="KB-00001"/>
+            <objectPath allowedObjectFlag="0">//title/internalRef</objectPath>
+            <objectUse>題名の中に参照を書いてはならない</objectUse>
+          </structureObjectRule>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00002"/>
+            <objectPath allowedObjectFlag="1">//dmStatus/security</objectPath>
+            <objectUse>機密区分は必ず書く</objectUse>
+          </structureObjectRule>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00003"/>
+            <objectPath allowedObjectFlag="2">//dmIdent/dmCode/@infoCode</objectPath>
+            <objectUse>使ってよい情報コード</objectUse>
+            <objectValue valueForm="single" valueAllowed="040">説明</objectValue>
+            <objectValue valueForm="range" valueAllowed="500~599">手順</objectValue>
+            <objectValue valueForm="pattern" valueAllowed="[0-9]{2}[A-Z]">プロジェクト拡張</objectValue>
+          </structureObjectRule>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00004"/>
+            <objectPath allowedObjectFlag="2">//responsiblePartnerCompany/@enterpriseCode</objectPath>
+            <objectUse>責任企業は本社コードにする</objectUse>
+            <objectValue valueForm="single" valueAllowed="K0002">本社</objectValue>
+          </structureObjectRule>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00005"/>
+            <objectPath allowedObjectFlag="0">//levelledPara/title</objectPath>
+            <objectUse>段落に題名を付けない（見出しは figure の title だけにする）</objectUse>
+          </structureObjectRule>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00006"/>
+            <objectPath allowedObjectFlag="0">not(//dmStatus/applic)</objectPath>
+            <objectUse>適用性は必ず書く（真偽値を返す式の例）</objectUse>
+          </structureObjectRule>
+        </structureObjectRuleGroup>
+        <notationRuleList>
+          <notationRule>
+            <notationName allowedNotationFlag="1">png</notationName>
+            <objectUse>図は PNG または CGM</objectUse>
+          </notationRule>
+          <notationRule>
+            <notationName allowedNotationFlag="1">cgm</notationName>
+            <objectUse>図は PNG または CGM</objectUse>
+          </notationRule>
+        </notationRuleList>
+      </contextRules>
+      <contextRules rulesContext="http://www.s1000d.org/S1000D_7/xml_schema_flat/proced.xsd">
+        <structureObjectRuleGroup>
+          <structureObjectRule>
+            <brDecisionRef brDecisionIdentNumber="KB-00007"/>
+            <objectPath allowedObjectFlag="0">//description</objectPath>
+            <objectUse>手順データモジュールでは説明要素を使わない（descript には当てはまらない文脈の例）</objectUse>
+          </structureObjectRule>
+        </structureObjectRuleGroup>
+        <notationRuleList>
+          <notationRule>
+            <notationName allowedNotationFlag="0">png</notationName>
+            <objectUse>手順では PNG を使わない</objectUse>
+          </notationRule>
+        </notationRuleList>
+      </contextRules>
+      <nonContextRules>
+        <nonContextRule>
+          <brDecisionRef brDecisionIdentNumber="KB-00100"/>
+          <simplePara>月末に CSDB を同期する</simplePara>
+        </nonContextRule>
+      </nonContextRules>
+    </brex>
+  </content>
+</dmodule>

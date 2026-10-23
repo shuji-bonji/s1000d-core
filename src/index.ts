@@ -25,3 +25,10 @@ export {
   readIdentAndStatus,
 } from './data-module.js';
 export * from './xml/index.js';
+export * from './brex/index.js';
+export {
+  createDirectoryBrexResolver,
+  findDataModule,
+  listDataModules,
+  type CsdbEntry,
+} from './csdb.js';

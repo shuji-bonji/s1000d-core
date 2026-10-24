@@ -22,3 +22,13 @@ export {
   type BrexResolver,
 } from './chain.js';
 export { lookupSns, type SnsLookupResult } from './sns.js';
+export {
+  BrexLocateError,
+  findDefaultBrex,
+  isDefaultBrexDmc,
+  locateBrex,
+  type BrexLocateReason,
+  type FoundBrex,
+  type LocateBrexOptions,
+  type LocatedBrex,
+} from './locate.js';

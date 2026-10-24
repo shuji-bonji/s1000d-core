@@ -18,6 +18,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | BREX データモジュールの読み取り（contextRules / nonContextRules / snsRules / notationRuleList） | `readBrex` / `allRules` / `lookupSns` |
 | データモジュールの BREX への照合（1 層、複数層、`brexDmRef` の連鎖をたどる） | `checkAgainstBrexLayer` / `checkAgainstBrexLayers` / `checkAgainstBrexChain` / `resolveBrexChain` |
 | フォルダーを CSDB と見なして DMC からファイルを探す | `listDataModules` / `findDataModule` / `createDirectoryBrexResolver` |
+| BREX の指定（ファイルのパス・DMC・省略＝配布物の既定 BREX）から BREX を 1 つ決める | `locateBrex` / `findDefaultBrex` / `isDefaultBrexDmc` |
 | XML の読み取りと XPath 3.1 の評価（差し替え可能なインターフェース） | `XmlEngine` / `defaultXmlEngine` |
 
 ```ts

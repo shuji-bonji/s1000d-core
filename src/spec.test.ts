@@ -7,10 +7,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readDataModuleInfo } from './data-module.js';
-import { formatDmc, parseDmcFileName } from './dmc.js';
+import { formatDmc, parseDmcFileName, sameDmc } from './dmc.js';
 import { parseIcnFileName } from './icn.js';
 import { defaultXmlEngine } from './xml/index.js';
-import { checkAgainstBrexChain, readBrex } from './brex/index.js';
+import { checkAgainstBrexChain, findDefaultBrex, locateBrex, readBrex } from './brex/index.js';
 import { createDirectoryBrexResolver } from './csdb.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
@@ -88,6 +88,19 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     // 既定 BREX は自分自身を参照する（連鎖の終端）
     expect(brex.value.brexDmRef?.dmCode.infoCode).toBe('022');
     expect(brex.value.brexDmRef?.dmCode.modelIdentCode).toBe('S1000D');
+  });
+
+  it('配布物全体から既定 BREX を探すと、中身の DMC がファイル名と一致し自分自身を参照するものが選ばれる', async () => {
+    // データ辞書の見本（ファイル名と中身の DMC が違う）が混ざっていても、配布フォルダーの既定 BREX が選ばれる
+    const found = findDefaultBrex([specDir]);
+    expect(found).toBeDefined();
+    expect(found!.brex.brexDmRef && sameDmc(found!.brex.brexDmRef.dmCode, found!.brex.dmCode)).toBe(
+      true,
+    );
+    expect(found!.path).toBe(brexFile);
+    const located = await locateBrex(undefined, { dirs: [specDir] });
+    expect(located.source).toBe('default');
+    expect(located.path).toBe(brexFile);
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

@@ -15,6 +15,7 @@ import { createDirectoryBrexResolver } from './csdb.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
 import { CsdbIndex } from './csdb-index.js';
 import { collectReferences, resolveReferences } from './refs/index.js';
+import { ApplicEvaluator, productFromPct, readAct, readCct, readPct } from './applic/index.js';
 import { Libxml2SchemaValidator } from './xsd-libxml2.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
@@ -166,6 +167,59 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     // 配布物の不整合: DOCTYPE では .PNG と宣言されているが、同梱の ICN は .SVG
     expect(icnMisses).toHaveLength(1);
     expect(icnMisses[0]).toMatch(/ICN-C0419-S1000D0406-001-01\.PNG/);
+  });
+
+  it('サンプル CSDB の ACT・CCT・PCT を読み、PCT の各製品で全データモジュールの適用性を判定できる', () => {
+    const bikeDir = dirname(dmFiles.find((f) => /bike/i.test(f))!);
+    const index = CsdbIndex.fromDirs([bikeDir]);
+    const docOf = (infoCode: string, model = 'S1000DBIKE') => {
+      const o = index.objects.find(
+        (x) => x.dm && x.dm.dmCode.modelIdentCode === model && x.dm.dmCode.infoCode === infoCode,
+      );
+      expect(o, `${model} ${infoCode}`).toBeDefined();
+      return defaultXmlEngine.parse(readFileSync(o!.path, 'utf8')).document;
+    };
+    const act = readAct(docOf('00W'))!;
+    const cct = readCct(docOf('00Q'))!;
+    const pct = readPct(docOf('00P'))!;
+    expect(act.productAttributes.map((a) => a.id)).toContain('model');
+    expect(act.condCrossRefTableRef?.dmCode.infoCode).toBe('00Q');
+    expect(act.productCrossRefTableRef?.dmCode.infoCode).toBe('00P');
+    expect(cct.condTypes.length).toBeGreaterThan(0);
+    expect(cct.conds.length).toBeGreaterThan(0);
+    expect(pct.products.length).toBeGreaterThan(0);
+
+    const dms = index.objects.filter((o) => o.kind === 'dm');
+    const tally: Record<string, number> = { applicable: 0, notApplicable: 0, undetermined: 0 };
+    let elementsChecked = 0;
+    const undeterminedReasons = new Set<string>();
+    for (const row of pct.products) {
+      const product = productFromPct(row);
+      for (const o of dms) {
+        const doc = defaultXmlEngine.parse(readFileSync(o.path, 'utf8')).document;
+        const ev = new ApplicEvaluator(doc);
+        const dm = ev.dmLevel(product);
+        tally[dm.state]++;
+        if (dm.state === 'undetermined' && dm.reason) undeterminedReasons.add(dm.reason);
+        for (const n of defaultXmlEngine.selectNodes('//*[@applicRefId]', doc)) {
+          const r = ev.forElement(n as never, product);
+          tally[r.state]++;
+          elementsChecked++;
+          if (r.state === 'undetermined' && r.reason)
+            undeterminedReasons.add(r.reason.replace(/"[^"]*"/g, '"…"'));
+        }
+      }
+    }
+    expect(elementsChecked).toBeGreaterThan(300);
+    // どの製品でも判定が出る DM があり、外れる DM もある
+    expect(tally.applicable).toBeGreaterThan(0);
+    expect(tally.notApplicable).toBeGreaterThan(0);
+    // undetermined の理由は「製品に無い属性」か「リポジトリに無い applicIdentValue」だけで、構文の読めなさは無い
+    for (const r of undeterminedReasons) {
+      expect(r).toMatch(
+        /product has no value for|not found in the applicability repository|no applic with id/,
+      );
+    }
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

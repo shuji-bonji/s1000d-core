@@ -9,6 +9,7 @@
 - 配布物の中の `xml_schema_flat/` の探索（`findSchemaDirs`。版は `brex.xsd` 冒頭の `Issue number:` から読む）と、`xsi:noNamespaceSchemaLocation` から使う XSD を決める `locateXsd`。
 - 検証状態 `VerificationStatus` と、整形式・XSD・BREX をまとめて行う `verifyDataModule`。s1000d-verify-mcp と s1000d-reader-mcp が同じ形で検証状態を返すための土台です。
 - 参照の解決（`collectReferences` / `resolveReferences`、`verifyDataModule` の `references`）。`dmRef`（brexDmRef・applicCrossRefTableRef・pmEntry などすべての文脈）、`pmRef`、ICN（`@infoEntityIdent` → DOCTYPE の `ENTITY` 宣言 → ファイル）、`internalRef`、`applicRefId`（`applic/@id` と `referencedApplicGroupRef/applicRef/@id` の両方）を集め、参照先の有無を理由付きで返します。`issueInfo` 付きの参照は版の一致も見て、違えば `issueMismatch` を付けます。
+- 適用性の評価（`src/applic/`）。ACT・CCT・PCT の読み取り（`readAct` / `readCct` / `readPct` / `productFromPct`）、`applic` の読み取り（`readApplicStatements`）、`assert` / `evaluate` の 3 値評価（`evaluateApplic` / `evaluateExpr`。applicable / notApplicable / undetermined）、データモジュール 1 件分の評価器 `ApplicEvaluator`（DM 全体の applic と要素の `@applicRefId` を and で結ぶ。`referencedApplicGroupRef/applicRef/@applicIdentValue` で別 DM の適用性リポジトリを指す形も `buildApplicRepository` で扱う）。値の照合は BREX と同じ `matchesRange`（単一値・`|`・`a~b`）。
 - PMC の分解・組み立て（`parsePmc` / `formatPmc` / `parsePmcFileName` / `samePmc`）と、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引（`listCsdbObjects` / `CsdbIndex`）。
 
 ### 変更

@@ -25,6 +25,8 @@ export {
   readIdentAndStatus,
 } from './data-module.js';
 export * from './xml/index.js';
+export * from './xml/schema-validator.js';
+export * from './verify/index.js';
 export * from './brex/index.js';
 export {
   createDirectoryBrexResolver,

@@ -10,7 +10,10 @@
   "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./xsd-libxml2": { "types": "./dist/xsd-libxml2.d.ts", "import": "./dist/xsd-libxml2.js" }
+  },
   "files": ["dist"],
   "publishConfig": { "access": "public" },
   "scripts": {
@@ -28,11 +31,14 @@
     "@xmldom/xmldom": "^0.9.12",
     "fontoxpath": "^3.34.0"
   },
+  "peerDependencies": { "libxml2-wasm": "^0.7.2" },
+  "peerDependenciesMeta": { "libxml2-wasm": { "optional": true } },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",
+    "libxml2-wasm": "^0.7.2",
     "prettier": "^3.8.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.53.0",

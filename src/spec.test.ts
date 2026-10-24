@@ -12,6 +12,8 @@ import { parseIcnFileName } from './icn.js';
 import { defaultXmlEngine } from './xml/index.js';
 import { checkAgainstBrexChain, findDefaultBrex, locateBrex, readBrex } from './brex/index.js';
 import { createDirectoryBrexResolver } from './csdb.js';
+import { findSchemaDirs, verifyDataModule } from './verify/index.js';
+import { Libxml2SchemaValidator } from './xsd-libxml2.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
 const specDir = resolve(process.env.S1000D_SPEC_DIR ?? '../../specs/s1000d/issue-7');
@@ -101,6 +103,36 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     const located = await locateBrex(undefined, { dirs: [specDir] });
     expect(located.source).toBe('default');
     expect(located.path).toBe(brexFile);
+  });
+
+  it('サンプル CSDB の全データモジュールが公式 XSD に適合する（libxml2-wasm、U-08 の実測と同じ）', async () => {
+    const schemaDirs = findSchemaDirs([specDir]);
+    expect(schemaDirs.length).toBeGreaterThan(0);
+    expect(schemaDirs[0].issue).toBe('7');
+    const validator = new Libxml2SchemaValidator();
+    try {
+      const bikeFiles = dmFiles.filter((f) => /bike/i.test(f));
+      expect(bikeFiles.length).toBeGreaterThan(100);
+      const t0 = performance.now();
+      const notValid: string[] = [];
+      for (const f of bikeFiles) {
+        const r = await verifyDataModule(readFileSync(f, 'utf8'), {
+          path: f,
+          schema: { validator, schemaDirs },
+        });
+        if (r.status.schema.state !== 'valid') {
+          notValid.push(
+            `${f}: ${r.status.schema.state} ${r.status.schema.reason ?? ''} ${r.schema.errors[0]?.message ?? ''}`,
+          );
+        }
+      }
+      const ms = performance.now() - t0;
+      expect(notValid).toEqual([]);
+      // U-08 の実測は 106 件で 0.27 秒。桁が変わっていないことだけを見る
+      expect(ms).toBeLessThan(5000);
+    } finally {
+      validator.dispose();
+    }
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

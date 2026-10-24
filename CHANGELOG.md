@@ -5,6 +5,13 @@
 ### 追加
 
 - BREX の所在の解決（`locateBrex` / `findDefaultBrex` / `isDefaultBrexDmc` / `BrexLocateError`）。s1000d-brex-mcp にあった「ファイルのパス・DMC・省略（配布物の既定 BREX）のどれで指定されても BREX を 1 つ決める」処理を、s1000d-verify-mcp と共有するために移しました。既定 BREX は `DMC-S1000D-*-04-10-0301-00A-022A-D` をシステム差異コードを見ずに探し、中身の DMC がファイル名と一致して自分自身を参照するものを優先します。見つからない理由は `BrexLocateError.reason`（`default-not-found` / `file-not-found` / `not-brex` / `invalid-spec` / `dmc-not-found`）で返します。
+- XML スキーマ（XSD）による検証（D-15、D-17）。インターフェース `SchemaValidator` と、`libxml2-wasm` による実装 `Libxml2SchemaValidator`（サブパス `@shuji-bonji/s1000d-core/xsd-libxml2`。`libxml2-wasm` は任意の peerDependency）。XSD ごとに 1 つコンパイルして使い回し、Issue 7 の Bike Samples 106 件を 0.5 秒以内で検証します。
+- 配布物の中の `xml_schema_flat/` の探索（`findSchemaDirs`。版は `brex.xsd` 冒頭の `Issue number:` から読む）と、`xsi:noNamespaceSchemaLocation` から使う XSD を決める `locateXsd`。
+- 検証状態 `VerificationStatus` と、整形式・XSD・BREX をまとめて行う `verifyDataModule`。s1000d-verify-mcp と s1000d-reader-mcp が同じ形で検証状態を返すための土台です。参照の解決は未実装（`references.state` は `not-run`）。
+
+### 変更
+
+- `package.json` の `exports` にサブパス `./xsd-libxml2` を追加。
 
 ## 0.1.0 (2026-10-24)
 

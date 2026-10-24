@@ -20,6 +20,9 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | フォルダーを CSDB と見なして DMC からファイルを探す | `listDataModules` / `findDataModule` / `createDirectoryBrexResolver` |
 | BREX の指定（ファイルのパス・DMC・省略＝配布物の既定 BREX）から BREX を 1 つ決める | `locateBrex` / `findDefaultBrex` / `isDefaultBrexDmc` |
 | XML の読み取りと XPath 3.1 の評価（差し替え可能なインターフェース） | `XmlEngine` / `defaultXmlEngine` |
+| XML スキーマ（XSD）による検証（差し替え可能なインターフェース。実装はサブパス `xsd-libxml2`） | `SchemaValidator` / `Libxml2SchemaValidator` |
+| 配布物の中の `xml_schema_flat/` を探し、`xsi:noNamespaceSchemaLocation` から使う XSD を決める | `findSchemaDirs` / `locateXsd` |
+| 1 件のデータモジュールの検証（整形式・XSD・BREX）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -55,8 +58,32 @@ S1000D Issue 7 の Chap 4.10.2（BREX data module）と Chap 7.9（Business rule
 | 階層 | `brexDmRef` の連鎖を既定 BREX（自分自身を参照）までたどり、各層に個別に照合する。層の統合はしない。どの層にも違反が無く、未解決の参照も無いときだけ `passed` |
 | `brSeverityLevel` | ルールの属性、無ければ `brex/@defaultBrSeverityLevel` をそのまま報告に載せる。意味の解釈はしない |
 
-> [!NOTE]
-> XML スキーマ（XSD）による検証は行いません。段階 2 の `s1000d-verify-mcp` で扱います。BREX 照合の前提になる「スキーマに適合していること」は別に確認してください。
+## XML スキーマ（XSD）による検証
+
+XSD は配布物に含まれ再配布できないため、利用者が展開したフォルダーから探します。検証の実装は `libxml2-wasm` で、サブパス `@shuji-bonji/s1000d-core/xsd-libxml2` から読み込みます。`libxml2-wasm` は任意の peerDependency なので、使うパッケージ側で `npm install libxml2-wasm` が要ります。
+
+```ts
+import { findSchemaDirs, createDirectoryBrexResolver, verifyDataModule } from '@shuji-bonji/s1000d-core';
+import { Libxml2SchemaValidator } from '@shuji-bonji/s1000d-core/xsd-libxml2';
+
+const specDir = process.env.S1000D_SPEC_DIR!;
+const schemaDirs = findSchemaDirs([specDir]);          // brex.xsd を含む xml_schema_flat/ を探す（版は brex.xsd から読む）
+const validator = new Libxml2SchemaValidator();        // XSD ごとに 1 つコンパイルして使い回す
+try {
+  const result = await verifyDataModule(xml, {
+    path: 'DMC-….XML',
+    schema: { validator, schemaDirs },
+    brex: { resolver: createDirectoryBrexResolver([specDir, './csdb']) },
+  });
+  console.log(result.status.schema.state);   // valid / invalid / schema-not-found / not-run
+  console.log(result.status.brex.state);     // passed / violations / incomplete / not-run
+  console.log(result.schema.errors);         // libxml2 の文章と行番号
+} finally {
+  validator.dispose();
+}
+```
+
+`VerificationStatus` には S1000D 準拠を表す 1 つの真偽値を置いていません。XSD と BREX の機械判定に通っても、nonContextRules（`brex.manualChecks`）と人が読むビジネスルール文書が残るためです。
 
 ## XML と XPath のライブラリ
 

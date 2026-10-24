@@ -34,3 +34,6 @@ export {
   listDataModules,
   type CsdbEntry,
 } from './csdb.js';
+export { formatPmc, parsePmc, parsePmcFileName, samePmc } from './pmc.js';
+export { CsdbIndex, listCsdbObjects, type CsdbObject, type CsdbObjectKind } from './csdb-index.js';
+export * from './refs/index.js';

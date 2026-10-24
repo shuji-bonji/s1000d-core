@@ -4,7 +4,7 @@
  * 場所は `S1000D_SPEC_DIR`（既定: ../../specs/s1000d/issue-7 — s1000d-stack の配置に合わせた相対パス）。
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readDataModuleInfo } from './data-module.js';
 import { formatDmc, parseDmcFileName, sameDmc } from './dmc.js';
@@ -13,6 +13,8 @@ import { defaultXmlEngine } from './xml/index.js';
 import { checkAgainstBrexChain, findDefaultBrex, locateBrex, readBrex } from './brex/index.js';
 import { createDirectoryBrexResolver } from './csdb.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
+import { CsdbIndex } from './csdb-index.js';
+import { collectReferences, resolveReferences } from './refs/index.js';
 import { Libxml2SchemaValidator } from './xsd-libxml2.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
@@ -133,6 +135,37 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     } finally {
       validator.dispose();
     }
+  });
+
+  it('サンプル CSDB の参照を解決できる（仕様書の章への参照と、配布物の不整合だけが未解決になる）', () => {
+    const bikeFile = dmFiles.find((f) => /bike/i.test(f))!;
+    const bikeDir = dirname(bikeFile);
+    const index = CsdbIndex.fromDirs([bikeDir]);
+    const totals: Record<string, { checked: number; unresolved: number }> = {};
+    const unresolvedDmRefModels = new Set<string>();
+    const icnMisses: string[] = [];
+    for (const o of index.objects.filter((x) => x.kind === 'dm' || x.kind === 'pm')) {
+      const { document } = defaultXmlEngine.parse(readFileSync(o.path, 'utf8'));
+      const rep = resolveReferences(collectReferences(document), { csdb: index });
+      for (const [k, v] of Object.entries(rep.counts)) {
+        totals[k] ??= { checked: 0, unresolved: 0 };
+        totals[k].checked += v.checked;
+        totals[k].unresolved += v.unresolved;
+      }
+      for (const u of rep.unresolved) {
+        if (u.reference.kind === 'dmRef')
+          unresolvedDmRefModels.add(u.reference.ref.dmCode.modelIdentCode);
+        if (u.reference.kind === 'icn') icnMisses.push(u.message);
+      }
+    }
+    expect(totals.internalRef.checked).toBeGreaterThan(500);
+    expect(totals.internalRef.unresolved).toBe(0);
+    expect(totals.applicRef.unresolved).toBe(0);
+    // ビジネスルール文書（024A-D）が仕様書の章（モデル識別コード S1000D）を dmRef で指す。CSDB には無いので未解決で正しい
+    expect(unresolvedDmRefModels.has('S1000D')).toBe(true);
+    // 配布物の不整合: DOCTYPE では .PNG と宣言されているが、同梱の ICN は .SVG
+    expect(icnMisses).toHaveLength(1);
+    expect(icnMisses[0]).toMatch(/ICN-C0419-S1000D0406-001-01\.PNG/);
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

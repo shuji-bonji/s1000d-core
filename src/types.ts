@@ -91,6 +91,28 @@ export type Icn =
       securityClassification: string;
     };
 
+/**
+ * パブリケーションモジュールコード（PMC）。`pmCode` 要素の属性に対応する。
+ * 例: `S1000DBIKE-B6865-EPWG1-00`
+ */
+export interface PmCode {
+  modelIdentCode: string;
+  /** 発行者コード（5 文字） */
+  pmIssuer: string;
+  /** 出版物番号（5 文字） */
+  pmNumber: string;
+  /** 巻（2 文字） */
+  pmVolume: string;
+}
+
+/** ファイル名に含まれる PMC の付加情報。例: `PMC-S1000DBIKE-B6865-EPWG1-00_006-00_EN-US.XML` */
+export interface PmcFileName {
+  pmCode: PmCode;
+  issueInfo?: IssueInfo;
+  language?: Language;
+  extension?: string;
+}
+
 /** データモジュールへの参照（`dmRef` 要素の中の `dmRefIdent`）。 */
 export interface DmRef {
   dmCode: DmCode;

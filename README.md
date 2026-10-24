@@ -22,7 +22,9 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | XML の読み取りと XPath 3.1 の評価（差し替え可能なインターフェース） | `XmlEngine` / `defaultXmlEngine` |
 | XML スキーマ（XSD）による検証（差し替え可能なインターフェース。実装はサブパス `xsd-libxml2`） | `SchemaValidator` / `Libxml2SchemaValidator` |
 | 配布物の中の `xml_schema_flat/` を探し、`xsi:noNamespaceSchemaLocation` から使う XSD を決める | `findSchemaDirs` / `locateXsd` |
-| 1 件のデータモジュールの検証（整形式・XSD・BREX）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
+| PMC の分解・組み立てと、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引 | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
+| 参照（`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`）を集め、参照先の有無を理由付きで返す | `collectReferences` / `resolveReferences` |
+| 1 件のデータモジュールの検証（整形式・XSD・BREX・参照）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -74,10 +76,13 @@ try {
     path: 'DMC-….XML',
     schema: { validator, schemaDirs },
     brex: { resolver: createDirectoryBrexResolver([specDir, './csdb']) },
+    references: { csdb: ['./csdb'] },
   });
   console.log(result.status.schema.state);   // valid / invalid / schema-not-found / not-run
   console.log(result.status.brex.state);     // passed / violations / incomplete / not-run
+  console.log(result.status.references.state); // resolved / unresolved / not-run
   console.log(result.schema.errors);         // libxml2 の文章と行番号
+  console.log(result.references?.unresolved); // 見つからなかった参照と理由
 } finally {
   validator.dispose();
 }

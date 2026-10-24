@@ -12,6 +12,7 @@ export {
   type SchemaDetail,
   type VerifyBrexOptions,
   type VerifyOptions,
+  type VerifyReferencesOptions,
   type VerifyResult,
   type VerifySchemaOptions,
 } from './verify.js';

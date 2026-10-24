@@ -7,7 +7,9 @@
 - BREX の所在の解決（`locateBrex` / `findDefaultBrex` / `isDefaultBrexDmc` / `BrexLocateError`）。s1000d-brex-mcp にあった「ファイルのパス・DMC・省略（配布物の既定 BREX）のどれで指定されても BREX を 1 つ決める」処理を、s1000d-verify-mcp と共有するために移しました。既定 BREX は `DMC-S1000D-*-04-10-0301-00A-022A-D` をシステム差異コードを見ずに探し、中身の DMC がファイル名と一致して自分自身を参照するものを優先します。見つからない理由は `BrexLocateError.reason`（`default-not-found` / `file-not-found` / `not-brex` / `invalid-spec` / `dmc-not-found`）で返します。
 - XML スキーマ（XSD）による検証（D-15、D-17）。インターフェース `SchemaValidator` と、`libxml2-wasm` による実装 `Libxml2SchemaValidator`（サブパス `@shuji-bonji/s1000d-core/xsd-libxml2`。`libxml2-wasm` は任意の peerDependency）。XSD ごとに 1 つコンパイルして使い回し、Issue 7 の Bike Samples 106 件を 0.5 秒以内で検証します。
 - 配布物の中の `xml_schema_flat/` の探索（`findSchemaDirs`。版は `brex.xsd` 冒頭の `Issue number:` から読む）と、`xsi:noNamespaceSchemaLocation` から使う XSD を決める `locateXsd`。
-- 検証状態 `VerificationStatus` と、整形式・XSD・BREX をまとめて行う `verifyDataModule`。s1000d-verify-mcp と s1000d-reader-mcp が同じ形で検証状態を返すための土台です。参照の解決は未実装（`references.state` は `not-run`）。
+- 検証状態 `VerificationStatus` と、整形式・XSD・BREX をまとめて行う `verifyDataModule`。s1000d-verify-mcp と s1000d-reader-mcp が同じ形で検証状態を返すための土台です。
+- 参照の解決（`collectReferences` / `resolveReferences`、`verifyDataModule` の `references`）。`dmRef`（brexDmRef・applicCrossRefTableRef・pmEntry などすべての文脈）、`pmRef`、ICN（`@infoEntityIdent` → DOCTYPE の `ENTITY` 宣言 → ファイル）、`internalRef`、`applicRefId`（`applic/@id` と `referencedApplicGroupRef/applicRef/@id` の両方）を集め、参照先の有無を理由付きで返します。`issueInfo` 付きの参照は版の一致も見て、違えば `issueMismatch` を付けます。
+- PMC の分解・組み立て（`parsePmc` / `formatPmc` / `parsePmcFileName` / `samePmc`）と、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引（`listCsdbObjects` / `CsdbIndex`）。
 
 ### 変更
 

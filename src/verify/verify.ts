@@ -16,6 +16,9 @@ import {
 } from '../xml/schema-validator.js';
 import { checkAgainstBrexChain, type BrexResolver } from '../brex/chain.js';
 import type { BrexCheckReport, BrexDocument } from '../brex/types.js';
+import { CsdbIndex } from '../csdb-index.js';
+import { collectReferences } from '../refs/collect.js';
+import { resolveReferences, type ReferenceReport } from '../refs/resolve.js';
 import { findSchemaDirs, locateXsd, type LocateXsdResult, type SchemaDir } from './schemas.js';
 import type { VerificationStatus } from './types.js';
 
@@ -32,6 +35,11 @@ export interface VerifyBrexOptions {
   extraLayers?: BrexDocument[];
 }
 
+export interface VerifyReferencesOptions {
+  /** CSDB の索引か、索引を作る元のフォルダー群。省略すると internalRef / applicRef だけを判定し、他は no-csdb になる */
+  csdb?: CsdbIndex | string[];
+}
+
 export interface VerifyOptions {
   /** 報告用のパス */
   path?: string;
@@ -39,6 +47,8 @@ export interface VerifyOptions {
   schema?: VerifySchemaOptions | false;
   /** 省略か false で BREX の照合を省く（state: not-run） */
   brex?: VerifyBrexOptions | false;
+  /** 省略か false で参照の解決を省く（state: not-run） */
+  references?: VerifyReferencesOptions | false;
   engine?: XmlEngine;
   /** テスト用。省略時は現在時刻 */
   now?: () => Date;
@@ -57,6 +67,7 @@ export interface VerifyResult {
   info?: DataModuleInfo;
   schema: SchemaDetail;
   brex?: BrexCheckReport;
+  references?: ReferenceReport;
 }
 
 function isSchemaDirArray(v: SchemaDir[] | string[]): v is SchemaDir[] {
@@ -95,7 +106,7 @@ export async function verifyDataModule(
       manualChecks: 0,
       skippedRules: 0,
     },
-    references: { state: 'not-run', checked: 0, unresolvedCount: 0, reason: 'not implemented yet' },
+    references: { state: 'not-run', checked: 0, unresolvedCount: 0 },
     checkedAt: formatLocalIso(now()),
   };
   const schema: SchemaDetail = { errors: [] };
@@ -112,6 +123,7 @@ export async function verifyDataModule(
         : String(e);
     status.schema = { state: 'not-run', reason: `not well-formed: ${msg}` };
     status.brex.reason = 'not well-formed';
+    status.references.reason = 'not well-formed';
     return { status, schema };
   }
   status.target = {
@@ -190,5 +202,25 @@ export async function verifyDataModule(
     status.brex.reason = 'skipped';
   }
 
-  return { status, info, schema, brex: brexReport };
+  // 4. 参照
+  let refReport: ReferenceReport | undefined;
+  if (options.references) {
+    const csdb =
+      options.references.csdb === undefined
+        ? undefined
+        : options.references.csdb instanceof CsdbIndex
+          ? options.references.csdb
+          : CsdbIndex.fromDirs(options.references.csdb);
+    const parsed = engine.parse(xml);
+    refReport = resolveReferences(collectReferences(parsed.document, engine), { csdb });
+    status.references = {
+      state: refReport.unresolved.length > 0 ? 'unresolved' : 'resolved',
+      checked: refReport.checked,
+      unresolvedCount: refReport.unresolved.length,
+    };
+  } else {
+    status.references.reason = 'skipped';
+  }
+
+  return { status, info, schema, brex: brexReport, references: refReport };
 }

@@ -1,21 +1,46 @@
 {
   "name": "@shuji-bonji/s1000d-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Core library for reading S1000D® CSDB objects: DMC/ICN parsing, identification and status section, XML/XPath layer. Not affiliated with ASD.",
-  "keywords": ["s1000d", "ietm", "ietp", "technical-publications", "dmc", "icn", "brex", "xml", "xpath", "typescript", "mcp"],
+  "keywords": [
+    "s1000d",
+    "ietm",
+    "ietp",
+    "technical-publications",
+    "dmc",
+    "icn",
+    "brex",
+    "xml",
+    "xpath",
+    "typescript",
+    "mcp"
+  ],
   "author": "shuji-bonji",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/shuji-bonji/s1000d-core.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuji-bonji/s1000d-core.git"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./xsd-libxml2": { "types": "./dist/xsd-libxml2.d.ts", "import": "./dist/xsd-libxml2.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./xsd-libxml2": {
+      "types": "./dist/xsd-libxml2.d.ts",
+      "import": "./dist/xsd-libxml2.js"
+    }
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -31,8 +56,14 @@
     "@xmldom/xmldom": "^0.9.12",
     "fontoxpath": "^3.34.0"
   },
-  "peerDependencies": { "libxml2-wasm": "^0.7.2" },
-  "peerDependenciesMeta": { "libxml2-wasm": { "optional": true } },
+  "peerDependencies": {
+    "libxml2-wasm": "^0.7.2"
+  },
+  "peerDependenciesMeta": {
+    "libxml2-wasm": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
@@ -44,5 +75,7 @@
     "typescript-eslint": "^8.53.0",
     "vitest": "^2.1.0"
   },
-  "engines": { "node": ">=20.0.0" }
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }

@@ -16,6 +16,7 @@ import { findSchemaDirs, verifyDataModule } from './verify/index.js';
 import { CsdbIndex } from './csdb-index.js';
 import { collectReferences, resolveReferences } from './refs/index.js';
 import { ApplicEvaluator, productFromPct, readAct, readCct, readPct } from './applic/index.js';
+import { countNodes, readContentFromXml } from './content/index.js';
 import { Libxml2SchemaValidator } from './xsd-libxml2.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
@@ -220,6 +221,35 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
         /product has no value for|not found in the applicability repository|no applic with id/,
       );
     }
+  });
+
+  it('サンプル CSDB の本文を 5 種（descript / proced / process / fault / pm）とも例外なく読める', () => {
+    const bikeDir = dirname(dmFiles.find((f) => /bike/i.test(f))!);
+    const index = CsdbIndex.fromDirs([bikeDir]);
+    const files: Record<string, number> = {};
+    const nodes: Record<string, Record<string, number>> = {};
+    const unknown: Record<string, Set<string>> = {};
+    for (const o of index.objects.filter((x) => x.kind === 'dm' || x.kind === 'pm')) {
+      const c = readContentFromXml(readFileSync(o.path, 'utf8'));
+      files[c.kind] = (files[c.kind] ?? 0) + 1;
+      nodes[c.kind] ??= {};
+      for (const [k, v] of Object.entries(countNodes(c.blocks)))
+        nodes[c.kind][k] = (nodes[c.kind][k] ?? 0) + v;
+      for (const k of Object.keys(c.unknownElements)) (unknown[c.kind] ??= new Set()).add(k);
+    }
+    expect(files).toMatchObject({ descript: 14, proced: 39, process: 1, fault: 5, pm: 4 });
+    // 2026-10-25 の実測。読み取り部分を広げたら更新する
+    expect(nodes.descript).toMatchObject({ section: 29, para: 72, figure: 20, table: 1 });
+    expect(nodes.proced).toMatchObject({ requirements: 78, step: 330, figure: 26 });
+    expect(nodes.pm).toEqual({ section: 4, entry: 110 });
+    expect(nodes.fault.step).toBe(6);
+    expect(nodes.process).toMatchObject({ sequence: 4, if: 1 });
+    // descript と pm には知らない要素が無い。proced の未知は回路遮断器（circuitBreaker…）の群だけ
+    expect(unknown.descript).toBeUndefined();
+    expect(unknown.pm).toBeUndefined();
+    expect(
+      [...(unknown.proced ?? [])].every((n) => /^circuitBreaker|^name$|^accessPointRef$/.test(n)),
+    ).toBe(true);
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

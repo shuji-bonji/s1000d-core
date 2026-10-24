@@ -24,6 +24,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | 配布物の中の `xml_schema_flat/` を探し、`xsi:noNamespaceSchemaLocation` から使う XSD を決める | `findSchemaDirs` / `locateXsd` |
 | PMC の分解・組み立てと、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引 | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
 | 参照（`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`）を集め、参照先の有無を理由付きで返す | `collectReferences` / `resolveReferences` |
+| 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
 | 1 件のデータモジュールの検証（整形式・XSD・BREX・参照）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
 

@@ -67,6 +67,11 @@ beforeAll(() => {
   writeFileSync(join(flat42, 'brex.xsd'), BREX_XSD_STUB('4.2'));
   mkdirSync(join(root, 'node_modules', 'xml_schema_flat'), { recursive: true });
   writeFileSync(join(root, 'node_modules', 'xml_schema_flat', 'brex.xsd'), BREX_XSD_STUB('9'));
+  mkdirSync(join(root, 'data_dictionary_7', 'Files', 'xml_schema_flat'), { recursive: true });
+  writeFileSync(
+    join(root, 'data_dictionary_7', 'Files', 'xml_schema_flat', 'brex.xsd'),
+    BREX_XSD_STUB('7'),
+  );
 });
 
 afterAll(() => {
@@ -75,7 +80,7 @@ afterAll(() => {
 });
 
 describe('findSchemaDirs / readIssueFromXsd / locateXsd', () => {
-  it('brex.xsd を含む xml_schema_flat/ を再帰的に探し、版を brex.xsd から読む（node_modules は見ない）', () => {
+  it('brex.xsd を含む xml_schema_flat/ を再帰的に探し、版を brex.xsd から読む（node_modules と data_dictionary は見ない）', () => {
     const dirs = findSchemaDirs([root]);
     expect(dirs.map((d) => d.issue).sort()).toEqual(['4.2', '7']);
     expect(dirs.find((d) => d.issue === '7')?.schemaNames).toEqual(['brex', 'common', 'note']);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 未リリース（0.2.1 に向けて）
+
+### 修正
+
+- `findSchemaDirs` が配布物のデータ辞書（`data_dictionary_*/Files/xml_schema_flat/`）の XSD を候補に入れないようにしました。この写しは `xml.xsd` などを `http://www.w3.org/2001/xml.xsd` の絶対 URL で import しており、libxml2 がネットワークに出ようとして失敗します。「XML Schema Package」側（相対パスで import）だけを使います。
+
 ## 0.2.0 (2026-10-25)
 
 段階 2（reader / verify）の土台。XSD 検証・参照の解決・適用性の評価・本文の読み取りを追加しました。利用側の `^0.1.0` は 0.2.0 を含まないため、依存範囲を `^0.2.0` に上げてください。

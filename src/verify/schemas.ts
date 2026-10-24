@@ -5,6 +5,7 @@
  * - 内側の zip をどの名前で展開しても見つかるように、`brex.xsd` を含む `xml_schema_flat/` フォルダーを再帰的に探す。
  * - 版（Issue）は `brex.xsd` 冒頭の `<xs:documentation>Issue number: 7</xs:documentation>` か
  *   URL の `S1000D_7` から読む。フォルダー名には頼らない。
+ * - データ辞書（`data_dictionary_7` など）の中の写しは見ない（import が絶対 URL で、オフラインでは解決できない）。
  * - 配布物の `xml_schema_cat/catalog.xml` は `rewritePrefix` を利用者が書き換える前提のものなので使わない。
  */
 import { existsSync, openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
@@ -73,6 +74,10 @@ export function findSchemaDirs(dirs: string[]): SchemaDir[] {
     for (const e of entries) {
       if (!e.isDirectory()) continue;
       if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      // 配布物のデータ辞書（data_dictionary_7/）の中にも XSD の写しがあるが、xml.xsd などを
+      // http://www.w3.org/2001/xml.xsd の絶対 URL で import しており、libxml2 がネットワークに出ようとして失敗する。
+      // 「XML Schema Package」側（相対パスで import）だけを使う
+      if (/^data_dictionary/i.test(e.name)) continue;
       visit(join(dir, e.name), depth + 1);
     }
   };

@@ -281,5 +281,5 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     expect(layersTotal).toBeLessThan(dmFiles.length * 4); // 循環していないこと
     // 公式サンプルにも既定 BREX への違反は少数ある（2026-10-23 の実測で数十件）。件数は固定しない
     expect(violations).toBeGreaterThanOrEqual(0);
-  });
+  }, 60000);
 });

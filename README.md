@@ -60,7 +60,7 @@ The checks follow Chap 4.10.2 (BREX data module) and Chap 7.9 (Business rules pr
 | `allowedObjectFlag="2"` | The value of each node in the result is checked against `objectValue`; a violation (`value`) if none matches. `single` is an exact match, `range` is a prefixed range such as `brsl51~brsl99`, and `pattern` is a full match of a regular expression |
 | An `objectPath` that returns a boolean (`not(…)` and the like) | true is treated as "object present" and false as "object absent", and the same rules apply |
 | `contextRules/@rulesContext` | Applies the block whose schema name matches the `xsi:noNamespaceSchemaLocation` of the target data module, plus the common block that has no `rulesContext` |
-| `notationRuleList` | A violation (`notation`) if a NOTATION used in `ENTITY … NDATA` of the DOCTYPE is not in the allowed set (the basic set plus schema-specific additions and exclusions) |
+| `notationRuleList` | A violation (`notation`) if a NOTATION used in `ENTITY … NDATA` of the DOCTYPE is not in the allowed set (the basic set plus schema-specific redefinitions and exclusions). A layer that has no inclusion (`allowedNotationFlag="1"`) and only exclusions (`"0"`) reports only the listed notations; other notations are not restricted by that layer (`notationPolicy`) |
 | `nonContextRules` | Not decided; returned as manual checks (`manualChecks`) |
 | Layers | Follows the `brexDmRef` chain up to the default BREX (which references itself) and checks each layer separately. Layers are not merged. `passed` only when no layer has a violation and no reference is unresolved |
 | `brSeverityLevel` | The rule's attribute, or `brex/@defaultBrSeverityLevel` if absent, is put in the report as is. Its meaning is not interpreted |

@@ -60,7 +60,7 @@ S1000D Issue 7 の Chap 4.10.2（BREX data module）と Chap 7.9（Business rule
 | `allowedObjectFlag="2"` | 結果の各節点の値を `objectValue` と照合し、どれにも合わなければ違反（`value`）。`single` は一致、`range` は `brsl51~brsl99` のような接頭辞付きの範囲、`pattern` は正規表現の全体一致 |
 | 真偽値を返す `objectPath`（`not(…)` など） | true を「対象あり」、false を「対象なし」として同じ規則で判定 |
 | `contextRules/@rulesContext` | 対象データモジュールの `xsi:noNamespaceSchemaLocation` とスキーマ名が一致するブロックと、`rulesContext` の無い共通ブロックを適用 |
-| `notationRuleList` | DOCTYPE の `ENTITY … NDATA` で使われている NOTATION が、許可された集合（基本セット＋スキーマ固有の追加・除外）に無ければ違反（`notation`） |
+| `notationRuleList` | DOCTYPE の `ENTITY … NDATA` で使われている NOTATION が、許可された集合（基本セット＋スキーマ固有の再定義・除外）に無ければ違反（`notation`）。許可（`allowedNotationFlag="1"`）が 1 つも無く除外（`"0"`）だけの層は、挙げたものだけを違反にし、それ以外はその層では制限しない（`notationPolicy`） |
 | `nonContextRules` | 判定せず、手動確認の項目（`manualChecks`）として返す |
 | 階層 | `brexDmRef` の連鎖を既定 BREX（自分自身を参照）までたどり、各層に個別に照合する。層の統合はしない。どの層にも違反が無く、未解決の参照も無いときだけ `passed` |
 | `brSeverityLevel` | ルールの属性、無ければ `brex/@defaultBrSeverityLevel` をそのまま報告に載せる。意味の解釈はしない |

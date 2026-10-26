@@ -169,34 +169,52 @@ export function usedNotations(document: Document): string[] {
 }
 
 /**
+ * この層の NOTATION ルールが、対象スキーマで NOTATION をどう制限するか。
+ *
+ * - closed: 使ってよい NOTATION の集合が決まっている（`allowed` に無いものは違反）
+ * - open: 集合は決まっておらず、`excluded` に挙げたものだけが違反
+ *
+ * 根拠（Issue 7 Chap 4.10.2.2 Para 2.2・2.2.2）: `allowedNotationFlag` は常に基本セットに対する相対的な宣言。
+ * 基本セットは rulesContext 無しの flag=1 で作る。スキーマ固有の flag=1 はその文脈の集合を再定義し、flag=0 はその文脈から除外する。
+ * 基本セットを BREX で決めないときは「BREX 以外の手段で範囲を決める」とされているので、flag=0 だけの層は
+ * 「挙げたものを除外し、それ以外はこの層では制限しない」（open）と読む。
+ */
+export type NotationPolicy =
+  { mode: 'closed'; allowed: Set<string> } | { mode: 'open'; excluded: Set<string> };
+
+export function notationPolicy(
+  brex: BrexDocument,
+  schemaLocation: string | undefined,
+): NotationPolicy | undefined {
+  const rules: BrexNotationRule[] = brex.contextRules.flatMap((c) => c.notationRules);
+  if (rules.length === 0) return undefined;
+  const name = (r: BrexNotationRule) => r.notationName.toUpperCase();
+  const common = rules.filter((r) => r.rulesContext === undefined);
+  const specific = rules.filter(
+    (r) => r.rulesContext !== undefined && contextApplies(r.rulesContext, schemaLocation),
+  );
+  const excluded = new Set(
+    [...common, ...specific].filter((r) => r.allowedNotationFlag === '0').map(name),
+  );
+  // スキーマ固有の flag=1 があれば、その文脈の集合は再定義される。無ければ基本セット
+  const specificAllowed = specific.filter((r) => r.allowedNotationFlag === '1').map(name);
+  const baseAllowed = common.filter((r) => r.allowedNotationFlag === '1').map(name);
+  const allowed = specificAllowed.length > 0 ? specificAllowed : baseAllowed;
+  if (allowed.length === 0) return { mode: 'open', excluded };
+  return { mode: 'closed', allowed: new Set(allowed.filter((n) => !excluded.has(n))) };
+}
+
+/**
  * この層の NOTATION ルールから、対象スキーマで使ってよい NOTATION の集合を求める。
- * 基本セット（rulesContext 無し）に、スキーマ固有の追加（flag=1）と除外（flag=0）を適用する。
- * NOTATION ルールが 1 つも無ければ undefined（制限なし）。
+ * 集合が決まらないとき（NOTATION ルールが無い、または除外だけで基本セットが無い）は undefined。
+ * 除外も含めた判定には notationPolicy を使う。
  */
 export function allowedNotations(
   brex: BrexDocument,
   schemaLocation: string | undefined,
 ): Set<string> | undefined {
-  const rules: BrexNotationRule[] = brex.contextRules.flatMap((c) => c.notationRules);
-  if (rules.length === 0) return undefined;
-  const base = new Set<string>();
-  for (const r of rules) {
-    if (r.rulesContext === undefined && r.allowedNotationFlag === '1')
-      base.add(r.notationName.toUpperCase());
-  }
-  const specific = rules.filter(
-    (r) => r.rulesContext !== undefined && contextApplies(r.rulesContext, schemaLocation),
-  );
-  const allowed = new Set(base);
-  // スキーマ固有の flag=1 があれば、その文脈の集合は再定義される
-  if (specific.some((r) => r.allowedNotationFlag === '1')) {
-    allowed.clear();
-    for (const r of specific)
-      if (r.allowedNotationFlag === '1') allowed.add(r.notationName.toUpperCase());
-  }
-  for (const r of specific)
-    if (r.allowedNotationFlag === '0') allowed.delete(r.notationName.toUpperCase());
-  return allowed;
+  const p = notationPolicy(brex, schemaLocation);
+  return p?.mode === 'closed' ? p.allowed : undefined;
 }
 
 /** 対象 DM を BREX 1 層に照合する。 */
@@ -216,24 +234,28 @@ export function checkAgainstBrexLayer(
       checkStructureRule(rule, brex, document, engine, violations, skipped);
     }
   }
-  const allowed = allowedNotations(brex, schemaLocation);
-  if (allowed) {
+  const policy = notationPolicy(brex, schemaLocation);
+  if (policy) {
     for (const used of usedNotations(document)) {
-      if (!allowed.has(used.toUpperCase())) {
-        const rule = brex.contextRules
-          .flatMap((c) => c.notationRules)
-          .find((r) => r.notationName.toUpperCase() === used.toUpperCase());
-        violations.push({
-          kind: 'notation',
-          ruleId: rule?.ruleId,
-          objectUse:
-            rule?.objectUse ??
-            `NOTATION "${used}" is not in the allowed set (${[...allowed].join(', ')})`,
-          brSeverityLevel: rule ? severityOf(rule, brex) : brex.defaultBrSeverityLevel,
-          actualValue: used,
-          allowedValues: [...allowed],
-        });
-      }
+      const key = used.toUpperCase();
+      const bad = policy.mode === 'closed' ? !policy.allowed.has(key) : policy.excluded.has(key);
+      if (!bad) continue;
+      const rule = brex.contextRules
+        .flatMap((c) => c.notationRules)
+        .find((r) => r.notationName.toUpperCase() === key);
+      const violation: BrexViolation = {
+        kind: 'notation',
+        ruleId: rule?.ruleId,
+        objectUse:
+          rule?.objectUse ??
+          (policy.mode === 'closed'
+            ? `NOTATION "${used}" is not in the allowed set (${[...policy.allowed].join(', ')})`
+            : `NOTATION "${used}" is excluded`),
+        brSeverityLevel: rule ? severityOf(rule, brex) : brex.defaultBrSeverityLevel,
+        actualValue: used,
+      };
+      if (policy.mode === 'closed') violation.allowedValues = [...policy.allowed];
+      violations.push(violation);
     }
   }
   return {

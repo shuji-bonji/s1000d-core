@@ -6,6 +6,7 @@ import type { DmRef } from '../types.js';
 import { checkAgainstBrexChain, resolveBrexChain } from './chain.js';
 import {
   allowedNotations,
+  notationPolicy,
   checkAgainstBrexLayers,
   contextApplies,
   usedNotations,
@@ -190,6 +191,36 @@ describe('checkAgainstBrexChain', () => {
       .sort();
     expect(kinds).toContain('missing:KB-00002');
     expect(kinds).toContain('notation:jpg');
+  });
+
+  it('除外（flag=0）だけの NOTATION ルールは、挙げたものだけを違反にする（Chap 4.10.2.2 Para 2.2.2）', () => {
+    const excludeOnly = {
+      ...projectBrex.value,
+      contextRules: [
+        {
+          structureRules: [],
+          notationRules: [
+            {
+              kind: 'notation' as const,
+              notationName: 'swf',
+              allowedNotationFlag: '0' as const,
+              objectUse: 'Flash は使わない',
+            },
+          ],
+        },
+      ],
+    };
+    expect(notationPolicy(excludeOnly, 'file:///descript.xsd')).toEqual({
+      mode: 'open',
+      excluded: new Set(['SWF']),
+    });
+    expect(allowedNotations(excludeOnly, 'file:///descript.xsd')).toBeUndefined();
+    const ok = checkAgainstBrexLayers(dmXml, [excludeOnly]);
+    expect(ok.layers[0].violations.filter((v) => v.kind === 'notation')).toEqual([]);
+    const bad = checkAgainstBrexLayers(dmXml.replace('NDATA png', 'NDATA swf'), [excludeOnly]);
+    const v = bad.layers[0].violations.find((x) => x.kind === 'notation');
+    expect(v).toMatchObject({ actualValue: 'swf', objectUse: 'Flash は使わない' });
+    expect(v?.allowedValues).toBeUndefined();
   });
 
   it('真偽値を返す objectPath を扱う', () => {

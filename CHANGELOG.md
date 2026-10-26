@@ -14,6 +14,7 @@
 
 ### 修正
 
+- NOTATION の照合で、許可（`allowedNotationFlag="1"`）が 1 つも無く除外（`"0"`）だけの BREX の層を「使ってよい NOTATION が 0 件」と読み、使われているすべての NOTATION を違反にしていた誤りを直しました。Issue 7 Chap 4.10.2.2 Para 2.2.2 のとおり `allowedNotationFlag` は基本セットに対する相対的な宣言で、基本セットを BREX で決めないときは BREX 以外の手段で範囲を決めるとされているため、この層は「挙げたものだけを違反にし、それ以外は制限しない」と読みます。判定は新しい `notationPolicy`（`closed` / `open`）で行い、`allowedNotations` は集合が決まらないとき `undefined` を返します（以前は空の集合）。Bike Samples では、Flash を除外するルール 1 件だけを持つ BREX のために出ていた NOTATION の違反 36 件が 0 件になりました。除外だけの層での NOTATION の違反には `allowedValues` が付きません。
 - `findSchemaDirs` が配布物のデータ辞書（`data_dictionary_*/Files/xml_schema_flat/`）の XSD を候補に入れないようにしました。この写しは `xml.xsd` などを `http://www.w3.org/2001/xml.xsd` の絶対 URL で import しており、libxml2 がネットワークに出ようとして失敗します。「XML Schema Package」側（相対パスで import）だけを使います。
 
 ## 0.2.0 (2026-10-25)

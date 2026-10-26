@@ -9,6 +9,8 @@ export {
 } from './values.js';
 export {
   allowedNotations,
+  notationPolicy,
+  type NotationPolicy,
   checkAgainstBrexLayer,
   checkAgainstBrexLayers,
   contextApplies,

@@ -167,7 +167,7 @@ export function suggestBrexFixes(report: BrexCheckReport, options: BrexFixOption
           };
           if (cands.length === 0)
             fix.note =
-              'The BREX layer allows no notation for this schema context, so no candidate can be given. If the layer only excludes some notations, the empty allowed set may not be what the project intends; ask the user.';
+              'This BREX layer excludes the notation but does not list the allowed ones (other notations are not restricted by this layer), so no candidate can be given. Ask the user which format to use, and check the parent BREX layers and the project business rules.';
           finish(fix);
           break;
         }

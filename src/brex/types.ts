@@ -127,7 +127,10 @@ export interface BrexViolation {
   rulesContext?: string;
   location?: NodeLocation;
   actualValue?: string;
-  /** value 違反のとき、許可されている値の一覧（valueAllowed） */
+  /**
+   * value 違反のとき、許可されている値の一覧（valueAllowed）。
+   * notation 違反のとき、使ってよい NOTATION の集合（集合が決まっている層だけ。除外だけの層では undefined）
+   */
   allowedValues?: string[];
 }
 

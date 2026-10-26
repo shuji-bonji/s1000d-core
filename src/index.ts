@@ -39,3 +39,4 @@ export { CsdbIndex, listCsdbObjects, type CsdbObject, type CsdbObjectKind } from
 export * from './refs/index.js';
 export * from './applic/index.js';
 export * from './content/index.js';
+export * from './fix/index.js';

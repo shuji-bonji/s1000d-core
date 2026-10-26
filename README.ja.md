@@ -29,6 +29,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
 | 1 件のデータモジュールの検証（整形式・XSD・BREX・参照）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
+| 検証結果（XSD・BREX・参照）と適用性の判定不能から、修正の候補を決定論的に決める | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -93,6 +94,43 @@ try {
 ```
 
 `VerificationStatus` には S1000D 準拠を表す 1 つの真偽値を置いていません。XSD と BREX の機械判定に通っても、nonContextRules（`brex.manualChecks`）と人が読むビジネスルール文書が残るためです。
+
+## 修正提案
+
+`suggestFixes` は `verifyDataModule` の結果から、違反ごとに「何を」「どこで」「どの値に」直せばよいかの候補（`Fix`）を返します。候補はすべてこのライブラリが決め、LLM には候補の中から選んで説明させる使い方を想定しています。LLM が許可値や参照先を自分で考え出さないようにするためです。
+
+| 元になる結果 | 候補 | 出どころ（`source`） |
+|---|---|---|
+| BREX の値の違反 | そのルールの `objectValue`（許可値と説明文。`range` と `pattern` は書き方を付けて渡す） | BREX のルール ID |
+| BREX の禁止・欠落 | 取り除く・足す（`objectValue` があれば初期値の候補にする） | BREX のルール ID |
+| BREX の NOTATION の違反 | 許可された NOTATION の一覧 | BREX |
+| XSD の違反 | libxml2 の文章にある値・要素。文章に無ければ XSD の定義（`xs:enumeration`・`xs:pattern`・子要素と属性の一覧）を読んで作る | XSD のファイル名と定義の名前 |
+| 未解決の参照 | 情報コードだけ違う DMC、システム差異コードだけ違う DMC、CSDB にある版、拡張子だけ違う ICN、近い id。仕様書の章への参照（モデル識別コード `S1000D`）は説明だけを返す | CsdbIndex、文書内の id |
+| 適用性の判定不能 | 製品に与える値（ACT の列挙・`valuePattern`、CCT の列挙、PCT の製品の値） | ACT・CCT・PCT |
+
+確からしさは `confidence` の 3 段階（`exact` = 候補が 1 つで値も決まる、`several` = 複数から選ぶか範囲・正規表現の中から選ぶ、`none` = 候補なし）で表し、点数は付けません。
+
+```ts
+import { findApplicTables, findUndeterminedApplicability, resolveBrexChain, suggestFixes, CsdbIndex } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+const result = await verifyDataModule(xml, { schema: { validator, schemaDirs }, brex: { resolver }, references: { csdb } });
+const chain = await resolveBrexChain(result.info?.identAndStatus?.brexDmRef, resolver);
+
+// 適用性は、判定に使う製品を決めたときだけ見る
+const tables = findApplicTables(xml, csdb);
+const findings = findUndeterminedApplicability(xml, { attributes: { model: 'MV-50' }, conditions: {} });
+
+const fixes = suggestFixes(result, {
+  xml,                       // 文書内の id から internalRef / applicRefId の候補を探す
+  csdb,                      // 参照の候補を探す
+  brexLayers: chain.layers,  // objectValue の説明文を候補に添える
+  applicability: { findings, act: tables.act?.act, cct: tables.cct?.cct, pct: tables.pct?.pct },
+});
+for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.candidates.map((c) => c.value));
+```
+
+XSD の定義は `result.schema.xsdPath` から読みます（`xsd: false` で読まずに済ませられます）。修正を文書に当てる処理（`apply_fix`）は持っていません。段階 3 の s1000d-writer-mcp が受け持ちます。
 
 ## XML と XPath のライブラリ
 

@@ -16,3 +16,4 @@ export {
   evaluateExpr,
   type ApplicEvaluatorOptions,
 } from './evaluate.js';
+export { findApplicTables, type ApplicTables } from './tables.js';

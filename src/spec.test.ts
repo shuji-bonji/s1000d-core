@@ -18,6 +18,8 @@ import { collectReferences, resolveReferences } from './refs/index.js';
 import { ApplicEvaluator, productFromPct, readAct, readCct, readPct } from './applic/index.js';
 import { countNodes, readContentFromXml } from './content/index.js';
 import { Libxml2SchemaValidator } from './xsd-libxml2.js';
+import { resolveBrexChain } from './brex/chain.js';
+import { suggestFixes } from './fix/index.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
 const specDir = resolve(process.env.S1000D_SPEC_DIR ?? '../../specs/s1000d/issue-7');
@@ -281,5 +283,58 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     expect(layersTotal).toBeLessThan(dmFiles.length * 4); // 循環していないこと
     // 公式サンプルにも既定 BREX への違反は少数ある（2026-10-23 の実測で数十件）。件数は固定しない
     expect(violations).toBeGreaterThanOrEqual(0);
+  }, 60000);
+
+  it('XSD 違反の修正候補を公式 XSD の定義（xml_schema_flat）から作る', async () => {
+    const schemaDirs = findSchemaDirs([specDir]).filter((d) => !/data_dictionary/i.test(d.dir));
+    const validator = new Libxml2SchemaValidator();
+    try {
+      const file = dmFiles.find(
+        (f) =>
+          /bike/i.test(f) &&
+          /descript\.xsd/.test(readFileSync(f, 'utf8')) &&
+          readFileSync(f, 'utf8').includes('securityClassification="01"'),
+      )!;
+      const xml = readFileSync(file, 'utf8')
+        .replace('securityClassification="01"', 'securityClassification="XX"')
+        .replace('<para>', '<para bogusAttr="1">');
+      const r = await verifyDataModule(xml, { path: file, schema: { validator, schemaDirs } });
+      expect(r.status.schema.state).toBe('invalid');
+      const fixes = suggestFixes(r, { xml });
+      const sec = fixes.find((f) => f.location?.path.endsWith('@securityClassification'));
+      expect(sec?.source).toMatch(/xs:simpleType name="securityClassificationAttType"/);
+      expect(sec?.candidates.map((c) => c.value)).toContain('01');
+      const bogus = fixes.find((f) => f.problem.includes("'bogusAttr'"));
+      expect(bogus?.candidates[0]).toMatchObject({ action: 'remove', target: '@bogusAttr' });
+      expect(bogus?.note).toMatch(/^Attributes allowed on para: /);
+      expect(bogus?.source).toBe('descript.xsd xs:element name="para"');
+    } finally {
+      validator.dispose();
+    }
+  });
+
+  it('サンプル CSDB の BREX 違反と未解決の参照のすべてに修正提案が付く', async () => {
+    const resolver = createDirectoryBrexResolver([specDir]);
+    const bikeFiles = dmFiles.filter((f) => /Bike Samples/.test(f));
+    const csdb = CsdbIndex.fromDirs([dirname(bikeFiles[0])]);
+    let expected = 0;
+    let got = 0;
+    let withCandidates = 0;
+    for (const f of bikeFiles) {
+      const xml = readFileSync(f, 'utf8');
+      const r = await verifyDataModule(xml, { path: f, brex: { resolver }, references: { csdb } });
+      const info = readDataModuleInfo(xml);
+      const chain = await resolveBrexChain(info.identAndStatus?.brexDmRef, resolver);
+      const fixes = suggestFixes(r, { xml, csdb, brexLayers: chain.layers });
+      expected +=
+        r.status.brex.violationCount +
+        (r.references?.unresolved.length ?? 0) +
+        (r.references?.resolved.filter((x) => x.issueMismatch && x.foundIssueInfo).length ?? 0);
+      got += fixes.length;
+      withCandidates += fixes.filter((x) => x.candidates.length > 0).length;
+      for (const x of fixes) expect(['exact', 'several', 'none']).toContain(x.confidence);
+    }
+    expect(got).toBe(expected);
+    expect(withCandidates).toBeGreaterThan(0);
   }, 60000);
 });

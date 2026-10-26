@@ -29,6 +29,7 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Read content (descript / proced / process / fault / pm) into a common shape (headings, paragraphs, steps, warnings, illustrations, tables, references) | `readContent` / `readContentFromXml` |
 | Applicability: read the ACT, CCT and PCT, and evaluate `assert` / `evaluate` with three values (applicable / notApplicable / undetermined) | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
 | Validate one data module (well-formedness, XSD, BREX, references) in one call and return the verification status `VerificationStatus` | `verifyDataModule` |
+| Decide fix candidates deterministically from the verification result (XSD, BREX, references) and from undetermined applicability | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -93,6 +94,43 @@ try {
 ```
 
 `VerificationStatus` has no single boolean that states S1000D conformance. Even when the machine checks of XSD and BREX pass, the nonContextRules (`brex.manualChecks`) and the business rules documents that people read remain.
+
+## Fix suggestions
+
+`suggestFixes` takes the result of `verifyDataModule` and returns, for each finding, candidates (`Fix`) that say what to change, where, and to which value. This library decides every candidate. The intended use is that an LLM only chooses among the candidates and explains them, so that the LLM does not invent allowed values or reference targets.
+
+| Source finding | Candidates | Origin (`source`) |
+|---|---|---|
+| BREX value violation | The rule's `objectValue` entries (allowed value and description; `range` and `pattern` are passed with their form) | BREX rule ID |
+| BREX forbidden / missing | Remove / add (an `objectValue`, if any, becomes the initial value) | BREX rule ID |
+| BREX NOTATION violation | The allowed notations | BREX |
+| XSD error | The values or elements named in the libxml2 message. If the message names none, they are taken from the XSD definitions (`xs:enumeration`, `xs:pattern`, the allowed child elements and attributes) | XSD file name and definition name |
+| Unresolved reference | A DMC that differs only in the information code, a DMC that differs only in the system difference code, the issue present in the CSDB, an ICN that differs only in the extension, a similar id. A reference to a chapter of the specification (model identification code `S1000D`) gets an explanation only | CsdbIndex, ids in the document |
+| Undetermined applicability | Values to give to the product (ACT enumerations and `valuePattern`, CCT enumerations, values assigned to PCT products) | ACT, CCT, PCT |
+
+The certainty is expressed in three levels of `confidence` (`exact` = one candidate with a fixed value, `several` = choose among several, or within a range or pattern, `none` = no candidate). No score is given.
+
+```ts
+import { findApplicTables, findUndeterminedApplicability, resolveBrexChain, suggestFixes, CsdbIndex } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+const result = await verifyDataModule(xml, { schema: { validator, schemaDirs }, brex: { resolver }, references: { csdb } });
+const chain = await resolveBrexChain(result.info?.identAndStatus?.brexDmRef, resolver);
+
+// Applicability is checked only when the product to evaluate against is decided
+const tables = findApplicTables(xml, csdb);
+const findings = findUndeterminedApplicability(xml, { attributes: { model: 'MV-50' }, conditions: {} });
+
+const fixes = suggestFixes(result, {
+  xml,                       // ids in the document, for internalRef / applicRefId candidates
+  csdb,                      // where reference candidates are searched
+  brexLayers: chain.layers,  // adds the objectValue descriptions to the candidates
+  applicability: { findings, act: tables.act?.act, cct: tables.cct?.cct, pct: tables.pct?.pct },
+});
+for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.candidates.map((c) => c.value));
+```
+
+The XSD definitions are read from `result.schema.xsdPath` (pass `xsd: false` to skip this). Applying a fix to the document (`apply_fix`) is not part of this library; s1000d-writer-mcp will do it in stage 3.
 
 ## XML and XPath libraries
 

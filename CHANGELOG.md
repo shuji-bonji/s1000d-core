@@ -1,6 +1,16 @@
 # Changelog
 
-## 未リリース（0.2.1 に向けて）
+## 未リリース（0.3.0 に向けて）
+
+### 追加
+
+- 修正提案（`src/fix/`、段階 2.5 の作業 1、D-19）。`suggestFixes` が `verifyDataModule` の結果から、違反ごとに直し方の候補 `Fix`（`kind` / `location` / `problem` / `candidates[]` / `confidence` / `source`、必要なら `note` と `brSeverityLevel`）を返します。候補は決定論的に決め、点数は付けず、確からしさは `exact` / `several` / `none` の 3 段階です。
+  - BREX: 値の違反はルールの `objectValue`（許可値と説明文、`range` / `pattern` は `valueForm` 付き）、禁止は「取り除く」、欠落は「足す」、NOTATION は許可された一覧（`suggestBrexFixes`）。
+  - XSD: libxml2 の文章にある値・要素を候補にし、文章に無いもの（型の不一致、`This element is not expected.` だけのもの、許されない属性）は XSD の定義を読んで作ります（`suggestSchemaFixes`）。定義の読み取りは `XsdIndex` / `loadXsdIndex`（`xs:include` / `xs:import` の相対パスをたどる）。
+  - 参照: 情報コード・システム差異コードだけ違う DMC、CSDB にある版（`issueMismatch`）、巻だけ違う PMC、拡張子だけ違う ICN、近い id（`suggestReferenceFixes`、`nearMatches` / `editDistance`）。仕様書の章への `dmRef` は候補を作らず説明だけを返します。
+  - 適用性: 製品の値が足りず判定不能になった適用性を集め（`findUndeterminedApplicability`）、ACT・CCT・PCT の値を `provide` の候補にします（`suggestApplicabilityFixes`）。
+- `findApplicTables`（対象 DM の ACT・CCT・PCT を CSDB から探す）。s1000d-reader-mcp の `services/context.ts` にあった処理を、s1000d-verify-mcp と共有するために移しました。
+
 
 ### 修正
 

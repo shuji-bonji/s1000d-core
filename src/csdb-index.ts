@@ -1,104 +1,31 @@
 /**
- * フォルダー群を CSDB と見なし、中の CSDB オブジェクト（DMC・PMC・DML・DDN・IMF・UPF・ICN）を一覧にして、
- * DMC・PMC・ファイル名から探せるようにする。
+ * CSDB オブジェクト（DMC・PMC・DML・DDN・IMF・UPF・ICN）の一覧を、DMC・PMC・ファイル名から探せるようにする索引。
  *
+ * 一覧と中身の取得は `CsdbSource`（csdb-source.ts）が行う。既定はフォルダー（`DirectoryCsdbSource`）。
  * `listDataModules`（csdb.ts）は DMC だけを拾う。参照の解決と reader にはそれ以外も要るため、ここで広げる。
  */
-import { readdirSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { parseDmcFileName, sameDmc } from './dmc.js';
-import { parsePmcFileName, samePmc } from './pmc.js';
-import type { DmCode, DmcFileName, IssueInfo, PmCode, PmcFileName } from './types.js';
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+import { DirectoryCsdbSource, type CsdbObject, type CsdbSource } from './csdb-source.js';
+import { sameDmc } from './dmc.js';
+import { samePmc } from './pmc.js';
+import type { DmCode, IssueInfo, PmCode } from './types.js';
 
-export type CsdbObjectKind = 'dm' | 'pm' | 'dml' | 'ddn' | 'imf' | 'upf' | 'icn' | 'other';
-
-export interface CsdbObject {
-  kind: CsdbObjectKind;
-  path: string;
-  /** ファイル名（パス無し） */
-  fileName: string;
-  /** kind が dm のとき */
-  dm?: DmcFileName;
-  /** kind が pm のとき */
-  pm?: PmcFileName;
-}
-
-function kindOf(name: string): CsdbObjectKind | undefined {
-  const m = /^(DMC|PMC|DML|DDN|IMF|UPF|ICN)-/i.exec(name);
-  if (!m) return undefined;
-  switch (m[1].toUpperCase()) {
-    case 'DMC':
-      return 'dm';
-    case 'PMC':
-      return 'pm';
-    case 'DML':
-      return 'dml';
-    case 'DDN':
-      return 'ddn';
-    case 'IMF':
-      return 'imf';
-    case 'UPF':
-      return 'upf';
-    case 'ICN':
-      return 'icn';
-    default:
-      return undefined;
-  }
-}
-
-/** フォルダー群（再帰）から CSDB オブジェクトを集める。XML でないファイルは ICN だけを拾う */
-export function listCsdbObjects(dirs: string[]): CsdbObject[] {
-  const out: CsdbObject[] = [];
-  const walk = (dir: string) => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
-        walk(p);
-        continue;
-      }
-      const kind = kindOf(e.name);
-      if (!kind) continue;
-      const isXml = /\.xml$/i.test(e.name);
-      if (kind !== 'icn' && !isXml) continue;
-      const obj: CsdbObject = { kind, path: p, fileName: e.name };
-      if (kind === 'dm') {
-        const r = parseDmcFileName(e.name);
-        if (!r.ok) continue;
-        obj.dm = r.value;
-      } else if (kind === 'pm') {
-        const r = parsePmcFileName(e.name);
-        if (!r.ok) continue;
-        obj.pm = r.value;
-      }
-      out.push(obj);
-    }
-  };
-  for (const d of dirs) {
-    try {
-      if (statSync(d).isDirectory()) walk(d);
-    } catch {
-      // 無いフォルダーは無視する
-    }
-  }
-  return out;
-}
+export { classifyCsdbFileName, listCsdbObjects } from './csdb-source.js';
+export type { CsdbObject, CsdbObjectKind } from './csdb-source.js';
 
 const issueKey = (i: IssueInfo | undefined) => (i ? `1-${i.issueNumber}-${i.inWork}` : '0');
 
 /** DMC・PMC・ファイル名で探せる索引 */
 export class CsdbIndex {
   readonly objects: CsdbObject[];
+  /** 中身を読むための出どころ。`new CsdbIndex(objects)` で作ったときは undefined（`path` をファイルとして読む） */
+  readonly source: CsdbSource | undefined;
   private readonly byFileName = new Map<string, CsdbObject[]>();
 
-  constructor(objects: CsdbObject[]) {
+  constructor(objects: CsdbObject[], source?: CsdbSource) {
     this.objects = objects;
+    this.source = source;
     for (const o of objects) {
       const key = o.fileName.toLowerCase();
       const list = this.byFileName.get(key);
@@ -107,8 +34,24 @@ export class CsdbIndex {
     }
   }
 
+  /** フォルダー群を CSDB と見なす（既定の形） */
   static fromDirs(dirs: string[]): CsdbIndex {
-    return new CsdbIndex(listCsdbObjects(dirs));
+    return CsdbIndex.fromSource(new DirectoryCsdbSource(dirs));
+  }
+
+  /** 任意の `CsdbSource` の上に索引を作る。一覧はこのときに 1 回だけ取る */
+  static fromSource(source: CsdbSource): CsdbIndex {
+    return new CsdbIndex(source.list(), source);
+  }
+
+  /** 出どころの説明。source が無ければ 'files' */
+  get description(): string {
+    return this.source?.description ?? 'files';
+  }
+
+  /** オブジェクトの中身（XML のテキスト）を読む。source が無ければ `path` をファイルとして読む */
+  read(object: CsdbObject): string {
+    return this.source ? this.source.readText(object) : readFileSync(object.path, 'utf8');
   }
 
   /** DMC に一致するデータモジュール（発行番号の大きいものが先） */

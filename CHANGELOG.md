@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 (2026-10-27)
+
+### 追加
+
+- `CsdbSource` インターフェース（`src/csdb-source.ts`、段階 2.5 の作業 3、D-19）。CSDB オブジェクトの「一覧」（`list()`）と「中身の取得」（`readText()`）をここに集め、フォルダー実装 `DirectoryCsdbSource` を既定にしたまま、データベースや API を持つ製品側が自分の実装を差し込めるようにしました。`CsdbIndex.fromSource(source)` で索引を作り、`index.read(object)` で中身を読みます。`CsdbIndex.fromDirs` は `DirectoryCsdbSource` の上に索引を作るようになり、結果は変わりません。
+- `MemoryCsdbSource`（ファイル名と XML の組をメモリーに持つ実装）。テストと、先に読み込んだ内容を渡すのに使います。
+- `classifyCsdbFileName`（ファイル名から種類と DMC・PMC を決める。`listCsdbObjects` と `MemoryCsdbSource` が共有）。
+- `createBrexResolver(index)`（`CsdbIndex` から BREX を探す）。`createDirectoryBrexResolver(dirs)` は `createBrexResolver(CsdbIndex.fromDirs(dirs))` と同じになりました。
+- `verifyDataModule` の `references.csdb` に `CsdbSource` を渡せるようにしました（これまでの `CsdbIndex` とフォルダーの一覧も引き続き受け取ります）。
+
+### 変更
+
+- `findApplicTables` と BREX の解決器が、ACT・CCT・PCT・BREX の中身を `readFileSync` ではなく索引の `read()` から読むようになりました。`new CsdbIndex(objects)` で `source` を与えずに作った索引は、これまでどおり `path` をファイルとして読みます。
+- `CsdbSource` は同期です。`resolveReferences`・`suggestFixes`・`findApplicTables` が同期関数で、非同期にするとそれらの API を変えることになるためです。非同期にしか読めない置き場所は、先に読み込んで `MemoryCsdbSource` に渡してください。
+
 ## 0.4.0 (2026-10-27)
 
 ### 追加

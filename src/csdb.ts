@@ -4,11 +4,12 @@
  * S1000D は CSDB の機能を定めるが、特定の保管方法は定めない。ここでは「フォルダーの中に
  * `DMC-….XML` の名前で置かれたファイル」を CSDB と見なす（配布物の Bike Samples と同じ形）。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readBrex } from './brex/read.js';
 import type { BrexDocument } from './brex/types.js';
 import type { BrexResolver } from './brex/chain.js';
+import { CsdbIndex } from './csdb-index.js';
 import { parseDmcFileName, sameDmc } from './dmc.js';
 import type { DmCode, DmRef, DmcFileName } from './types.js';
 import type { XmlEngine } from './xml/engine.js';
@@ -68,14 +69,13 @@ export function findDataModule(entries: CsdbEntry[], dmCode: DmCode): CsdbEntry 
 }
 
 /**
- * フォルダー群から BREX を探す BrexResolver を作る。
- * 既定 BREX（`S1000D_SPEC_DIR` の中）とプロジェクトの CSDB を同じ一覧に入れておけば、連鎖を最後までたどれる。
+ * CSDB の索引から BREX を探す BrexResolver を作る。中身は索引の `CsdbSource` から読む。
+ * 既定 BREX（`S1000D_SPEC_DIR` の中）とプロジェクトの CSDB を同じ索引に入れておけば、連鎖を最後までたどれる。
  */
-export function createDirectoryBrexResolver(
-  dirs: string[],
+export function createBrexResolver(
+  index: CsdbIndex,
   engine: XmlEngine = defaultXmlEngine,
 ): BrexResolver {
-  const entries = listDataModules(dirs);
   const cache = new Map<string, BrexDocument | undefined>();
   return (ref: DmRef) => {
     const key = JSON.stringify(ref.dmCode);
@@ -84,10 +84,10 @@ export function createDirectoryBrexResolver(
     // 中身の DMC が参照と一致するものを優先し、無ければ最初に読めたものを返す
     let fallback: BrexDocument | undefined;
     let brex: BrexDocument | undefined;
-    for (const entry of findDataModules(entries, ref.dmCode)) {
+    for (const obj of index.findDataModules(ref.dmCode)) {
       let r;
       try {
-        r = readBrex(readFileSync(entry.path, 'utf8'), engine);
+        r = readBrex(index.read(obj), engine);
       } catch {
         continue;
       }
@@ -102,4 +102,14 @@ export function createDirectoryBrexResolver(
     cache.set(key, brex);
     return brex;
   };
+}
+
+/**
+ * フォルダー群から BREX を探す BrexResolver を作る（`createBrexResolver(CsdbIndex.fromDirs(dirs))` と同じ）。
+ */
+export function createDirectoryBrexResolver(
+  dirs: string[],
+  engine: XmlEngine = defaultXmlEngine,
+): BrexResolver {
+  return createBrexResolver(CsdbIndex.fromDirs(dirs), engine);
 }

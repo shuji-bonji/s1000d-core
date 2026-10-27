@@ -17,6 +17,7 @@ import {
 import { checkAgainstBrexChain, type BrexResolver } from '../brex/chain.js';
 import type { BrexCheckReport, BrexDocument } from '../brex/types.js';
 import { CsdbIndex } from '../csdb-index.js';
+import type { CsdbSource } from '../csdb-source.js';
 import { collectReferences } from '../refs/collect.js';
 import { resolveReferences, type ReferenceReport } from '../refs/resolve.js';
 import { findSchemaDirs, locateXsd, type LocateXsdResult, type SchemaDir } from './schemas.js';
@@ -36,8 +37,8 @@ export interface VerifyBrexOptions {
 }
 
 export interface VerifyReferencesOptions {
-  /** CSDB の索引か、索引を作る元のフォルダー群。省略すると internalRef / applicRef だけを判定し、他は no-csdb になる */
-  csdb?: CsdbIndex | string[];
+  /** CSDB の索引、`CsdbSource`、または索引を作る元のフォルダー群。省略すると internalRef / applicRef だけを判定し、他は no-csdb になる */
+  csdb?: CsdbIndex | CsdbSource | string[];
 }
 
 export interface VerifyOptions {
@@ -210,7 +211,9 @@ export async function verifyDataModule(
         ? undefined
         : options.references.csdb instanceof CsdbIndex
           ? options.references.csdb
-          : CsdbIndex.fromDirs(options.references.csdb);
+          : Array.isArray(options.references.csdb)
+            ? CsdbIndex.fromDirs(options.references.csdb)
+            : CsdbIndex.fromSource(options.references.csdb);
     const parsed = engine.parse(xml);
     refReport = resolveReferences(collectReferences(parsed.document, engine), { csdb });
     status.references = {

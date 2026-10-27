@@ -25,6 +25,7 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Validate against an XML schema (XSD) (replaceable interface; the implementation lives in the subpath `xsd-libxml2`) | `SchemaValidator` / `Libxml2SchemaValidator` |
 | Find `xml_schema_flat/` inside the distribution and pick the XSD to use from `xsi:noNamespaceSchemaLocation` | `findSchemaDirs` / `locateXsd` |
 | Parse and format a PMC, and index a CSDB that also picks up objects other than DMs (PMC, DML, DDN, IMF, UPF, ICN) | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
+| Swap where the CSDB lives (a folder by default; a database or API implementation can be plugged in) | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
 | Collect references (`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`) and report whether each target exists, with the reason | `collectReferences` / `resolveReferences` |
 | Read content (descript / proced / process / fault / pm) into a common shape (headings, paragraphs, steps, warnings, illustrations, tables, references) | `readContent` / `readContentFromXml` |
 | Applicability: read the ACT, CCT and PCT, and evaluate `assert` / `evaluate` with three values (applicable / notApplicable / undetermined) | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
@@ -145,6 +146,32 @@ for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.can
 ```
 
 The XSD definitions are read from `result.schema.xsdPath` (pass `xsd: false` to skip this). Applying a fix to the document (`apply_fix`) is not part of this library; s1000d-writer-mcp will do it in stage 3.
+
+## Swapping where the CSDB lives (CsdbSource)
+
+By default, core treats `DMC-….XML` files inside a folder as the CSDB (`CsdbIndex.fromDirs`). A product's CSDB is a database or an API, so "listing" and "fetching the content" are gathered in the `CsdbSource` interface. It is swapped the same way as `XmlEngine` / `SchemaValidator`.
+
+```ts
+import { CsdbIndex, MemoryCsdbSource, createBrexResolver, type CsdbSource } from '@shuji-bonji/s1000d-core';
+
+// 1. Pass content you have already loaded (for tests, or for a store that can only be read asynchronously)
+const rows = await db.query('select file_name, xml from csdb_objects');
+const source = new MemoryCsdbSource(rows.map((r) => ({ fileName: r.file_name, xml: r.xml })), 'project CSDB');
+
+// 2. Plug in your own implementation (list returns the objects, readText returns the content; both synchronous)
+const custom: CsdbSource = {
+  description: 'product CSDB',
+  list: () => cache.objects,
+  readText: (o) => cache.xmlOf(o.path),
+};
+
+const csdb = CsdbIndex.fromSource(source);       // index (look up by DMC, PMC or file name)
+const xml = csdb.read(csdb.findDataModules(dmCode)[0]!);
+const resolver = createBrexResolver(csdb);       // BREX is read from this CSDB as well
+await verifyDataModule(xml, { references: { csdb } });  // accepts a CsdbIndex, a CsdbSource or a list of folders
+```
+
+`CsdbObject.path` is the identifier inside the store: the file path for a folder, and for `MemoryCsdbSource` the string given as `path` (the file name if omitted). It is returned in responses as is. Writing back will be added in stage 3 (writer).
 
 ## XML and XPath libraries
 

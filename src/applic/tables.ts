@@ -5,7 +5,6 @@
  * ACT の参照が無いときは、同じモデル識別コードの ACT（情報コード 00W）を CSDB から探す。
  * s1000d-reader-mcp の services/context.ts にあった処理を、verify-mcp の suggest_fixes と共有するために移した。
  */
-import { readFileSync } from 'node:fs';
 import type { CsdbIndex } from '../csdb-index.js';
 import { readDataModuleInfo, readDmCodeElement } from '../data-module.js';
 import { formatDmc } from '../dmc.js';
@@ -26,7 +25,7 @@ export interface ApplicTables {
 function readDm(index: CsdbIndex, dmCode: DmCode): { path: string; xml: string } | undefined {
   const found = index.findDataModules(dmCode)[0];
   if (!found) return undefined;
-  return { path: found.path, xml: readFileSync(found.path, 'utf8') };
+  return { path: found.path, xml: index.read(found) };
 }
 
 export function findApplicTables(

@@ -29,13 +29,24 @@ export * from './xml/schema-validator.js';
 export * from './verify/index.js';
 export * from './brex/index.js';
 export {
+  createBrexResolver,
   createDirectoryBrexResolver,
   findDataModule,
   listDataModules,
   type CsdbEntry,
 } from './csdb.js';
 export { formatPmc, parsePmc, parsePmcFileName, samePmc } from './pmc.js';
-export { CsdbIndex, listCsdbObjects, type CsdbObject, type CsdbObjectKind } from './csdb-index.js';
+export { CsdbIndex } from './csdb-index.js';
+export {
+  DirectoryCsdbSource,
+  MemoryCsdbSource,
+  classifyCsdbFileName,
+  listCsdbObjects,
+  type CsdbObject,
+  type CsdbObjectKind,
+  type CsdbSource,
+  type MemoryCsdbEntry,
+} from './csdb-source.js';
 export * from './refs/index.js';
 export * from './applic/index.js';
 export * from './content/index.js';

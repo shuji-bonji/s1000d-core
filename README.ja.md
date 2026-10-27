@@ -25,6 +25,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | XML スキーマ（XSD）による検証（差し替え可能なインターフェース。実装はサブパス `xsd-libxml2`） | `SchemaValidator` / `Libxml2SchemaValidator` |
 | 配布物の中の `xml_schema_flat/` を探し、`xsi:noNamespaceSchemaLocation` から使う XSD を決める | `findSchemaDirs` / `locateXsd` |
 | PMC の分解・組み立てと、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引 | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
+| CSDB の置き場所の差し替え（既定はフォルダー。データベースや API の実装を差し込める） | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
 | 参照（`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`）を集め、参照先の有無を理由付きで返す | `collectReferences` / `resolveReferences` |
 | 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
@@ -145,6 +146,32 @@ for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.can
 ```
 
 XSD の定義は `result.schema.xsdPath` から読みます（`xsd: false` で読まずに済ませられます）。修正を文書に当てる処理（`apply_fix`）は持っていません。段階 3 の s1000d-writer-mcp が受け持ちます。
+
+## CSDB の置き場所を差し替える（CsdbSource）
+
+core は既定で「フォルダーの中の `DMC-….XML`」を CSDB と見なします（`CsdbIndex.fromDirs`）。製品の CSDB はデータベースや API なので、「一覧」と「中身の取得」を `CsdbSource` インターフェースに集めてあります。`XmlEngine` / `SchemaValidator` と同じ差し替えの形です。
+
+```ts
+import { CsdbIndex, MemoryCsdbSource, createBrexResolver, type CsdbSource } from '@shuji-bonji/s1000d-core';
+
+// 1. 先に読み込んだ内容を渡す（テストや、非同期にしか読めない置き場所に）
+const rows = await db.query('select file_name, xml from csdb_objects');
+const source = new MemoryCsdbSource(rows.map((r) => ({ fileName: r.file_name, xml: r.xml })), 'project CSDB');
+
+// 2. 自分の実装を差し込む（list は一覧、readText は中身。どちらも同期）
+const custom: CsdbSource = {
+  description: 'product CSDB',
+  list: () => cache.objects,
+  readText: (o) => cache.xmlOf(o.path),
+};
+
+const csdb = CsdbIndex.fromSource(source);       // 索引（DMC・PMC・ファイル名で探す）
+const xml = csdb.read(csdb.findDataModules(dmCode)[0]!);
+const resolver = createBrexResolver(csdb);       // BREX もこの CSDB から読む
+await verifyDataModule(xml, { references: { csdb } });  // CsdbIndex・CsdbSource・フォルダーの一覧のどれでもよい
+```
+
+`CsdbObject.path` は置き場所の中での識別子で、フォルダーならファイルのパス、`MemoryCsdbSource` なら `path` に与えた文字列（省くとファイル名）です。応答にはそのまま載ります。書き戻しは段階 3（writer）で足します。
 
 ## XML と XPath のライブラリ
 

@@ -26,6 +26,7 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Find `xml_schema_flat/` inside the distribution and pick the XSD to use from `xsi:noNamespaceSchemaLocation` | `findSchemaDirs` / `locateXsd` |
 | Parse and format a PMC, and index a CSDB that also picks up objects other than DMs (PMC, DML, DDN, IMF, UPF, ICN) | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
 | Swap where the CSDB lives (a folder by default; a database or API implementation can be plugged in) | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
+| Read a DML (data module list) and a DDN (data dispatch note) and reconcile them with the CSDB (missing, different issue, not listed in the DML) | `readDml` / `readDdn` / `reconcileDml` / `reconcileDdn` / `parseDmlFileName` / `parseDdnFileName` |
 | Collect references (`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`) and report whether each target exists, with the reason | `collectReferences` / `resolveReferences` |
 | Read content (descript / proced / process / fault / pm) into a common shape (headings, paragraphs, steps, warnings, illustrations, tables, references) | `readContent` / `readContentFromXml` |
 | Applicability: read the ACT, CCT and PCT, and evaluate `assert` / `evaluate` with three values (applicable / notApplicable / undetermined) | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
@@ -172,6 +173,35 @@ await verifyDataModule(xml, { references: { csdb } });  // accepts a CsdbIndex, 
 ```
 
 `CsdbObject.path` is the identifier inside the store: the file path for a folder, and for `MemoryCsdbSource` the string given as `path` (the file name if omitted). It is returned in responses as is. Writing back will be added in stage 3 (writer).
+
+## Reconciling a DML and a DDN with the CSDB
+
+The library reads a data module list (DML, `dml.xsd`) and a data dispatch note (DDN, `ddn.xsd`) and reconciles them with the CSDB. This is the foundation for project management (stage 2.5).
+
+```ts
+import { CsdbIndex, readDdn, readDml, reconcileDdn, reconcileDml } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+const dmlObj = csdb.objects.find((o) => o.kind === 'dml')!;
+const dml = readDml(csdb.read(dmlObj));
+if (dml.ok) {
+  const r = reconcileDml(dml.value, csdb);
+  console.log(r.counts);        // { found, 'issue-mismatch', 'not-found', 'not-checked' }
+  console.log(r.notListed);     // DMs and PMs in the CSDB that the DML does not list
+}
+const ddnObj = csdb.objects.find((o) => o.kind === 'ddn')!;
+const ddn = readDdn(csdb.read(ddnObj));
+if (ddn.ok) console.log(reconcileDdn(ddn.value, csdb).items.filter((i) => i.state !== 'found'));
+```
+
+| State | Meaning |
+|---|---|
+| `found` | The object is in the CSDB (and, when the DML entry names an issue, that issue is there) |
+| `issue-mismatch` | The object is there, but not the issue the DML or DDN names. `foundIssueInfo` is the latest issue in the CSDB |
+| `not-found` | The object is not in the CSDB |
+| `not-checked` | Not reconciled (a DML entry that references a comment) |
+
+A DML entry holds exactly one of `dmRef` / `pmRef` / `infoEntityRef` (ICN) / `dmlRef` / `commentRef`. The values of `dmlType`, `dmlEntryType` and `issueType` are returned as the XSD enumerations, without interpretation. `notListed` covers only DMs and PMs whose model identification code appears in the DML entries, and ignores the language. A DDN is reconciled by `dispatchFileName`; when a name differs only in the issue part (`_NNN-NN`), the item is `issue-mismatch`. Data modules with an extended DMC (file names starting with `DME-`) are indexed as `kind: 'dme'` and can be found by file name, not by DMC.
 
 ## XML and XPath libraries
 

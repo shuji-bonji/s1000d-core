@@ -51,6 +51,7 @@ export * from './refs/index.js';
 export * from './applic/index.js';
 export * from './content/index.js';
 export * from './fix/index.js';
+export * from './dml/index.js';
 export {
   CONFIG_PATH_ENV,
   CSDB_DIR_ENV,

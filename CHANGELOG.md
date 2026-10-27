@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 (2026-10-28)
+
+### 追加
+
+- DML（データモジュールリスト）と DDN（納入票）の読み取りと、CSDB との照合（`src/dml/`、段階 2.5 の作業 5、D-19）。`readDml` / `readDdn` が識別・状態部と行（`dmlEntry` の `dmRef` / `pmRef` / `infoEntityRef` / `dmlRef` / `commentRef`、`deliveryListItem` の `dispatchFileName`）を読み、`reconcileDml` / `reconcileDdn` が `found` / `issue-mismatch` / `not-found` / `not-checked` と、CSDB にあるのに DML に載っていない DM・PM（`notListed`）を返します。`dmlType`・`dmlEntryType`・`issueType` は解釈しません。コードとファイル名の分解・組み立ては `parseDmlCode` / `parseDmlFileName` / `formatDmlCode` / `parseDdnCode` / `parseDdnFileName` / `formatDdnCode`。
+- `CsdbObject` に `dml` / `ddn`（ファイル名から読めた DML・DDN のコードと発行情報）を足しました。
+- `CsdbObjectKind` に `dme`（拡張 DMC のデータモジュール。ファイル名が `DME-` で始まる。Bike Samples に 2 件）を足しました。これまでは索引に入らず、DDN の照合で「無い」と出ていました。`dm` は付かないので `findDataModules` では見つかりません（`findByFileName` では見つかります）。
+- `readIssueInfo` を `data-module.ts` から export しました（内部用）。
+
 ## 0.5.0 (2026-10-27)
 
 ### 追加

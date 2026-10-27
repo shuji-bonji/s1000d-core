@@ -13,10 +13,16 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDmcFileName } from './dmc.js';
+import { parseDdnFileName, parseDmlFileName } from './dml/code.js';
+import type { DdnFileName, DmlFileName } from './dml/types.js';
 import { parsePmcFileName } from './pmc.js';
 import type { DmcFileName, PmcFileName } from './types.js';
 
-export type CsdbObjectKind = 'dm' | 'pm' | 'dml' | 'ddn' | 'imf' | 'upf' | 'icn' | 'other';
+/**
+ * dme は拡張 DMC（`dmCodeExtension`）を持つデータモジュール（`DME-<製造者>-<拡張コード>-<DMC>…`、Bike Samples に 2 件）。
+ * ファイル名だけで DMC を決められないため `dm` は付けず、`findDataModules` では見つからない（`findByFileName` では見つかる）
+ */
+export type CsdbObjectKind = 'dm' | 'dme' | 'pm' | 'dml' | 'ddn' | 'imf' | 'upf' | 'icn' | 'other';
 
 export interface CsdbObject {
   kind: CsdbObjectKind;
@@ -28,6 +34,10 @@ export interface CsdbObject {
   dm?: DmcFileName;
   /** kind が pm のとき */
   pm?: PmcFileName;
+  /** kind が dml で、ファイル名が DML のコードとして読めたとき */
+  dml?: DmlFileName;
+  /** kind が ddn で、ファイル名が DDN のコードとして読めたとき */
+  ddn?: DdnFileName;
 }
 
 /** CSDB オブジェクトの一覧と中身の取得 */
@@ -45,9 +55,9 @@ export interface CsdbSource {
  * 接頭辞（DMC- / PMC- / …）が無い、XML でない（ICN 以外）、DMC・PMC として読めない名前は undefined
  */
 export function classifyCsdbFileName(fileName: string): CsdbObject | undefined {
-  const m = /^(DMC|PMC|DML|DDN|IMF|UPF|ICN)-/i.exec(fileName);
+  const m = /^(DMC|DME|PMC|DML|DDN|IMF|UPF|ICN)-/i.exec(fileName);
   if (!m) return undefined;
-  const kind = m[1].toLowerCase() as 'dmc' | 'pmc' | 'dml' | 'ddn' | 'imf' | 'upf' | 'icn';
+  const kind = m[1].toLowerCase() as 'dmc' | 'dme' | 'pmc' | 'dml' | 'ddn' | 'imf' | 'upf' | 'icn';
   const k: CsdbObjectKind = kind === 'dmc' ? 'dm' : kind === 'pmc' ? 'pm' : kind;
   const isXml = /\.xml$/i.test(fileName);
   if (k !== 'icn' && !isXml) return undefined;
@@ -60,6 +70,12 @@ export function classifyCsdbFileName(fileName: string): CsdbObject | undefined {
     const r = parsePmcFileName(fileName);
     if (!r.ok) return undefined;
     obj.pm = r.value;
+  } else if (k === 'dml') {
+    const r = parseDmlFileName(fileName);
+    if (r.ok) obj.dml = r.value;
+  } else if (k === 'ddn') {
+    const r = parseDdnFileName(fileName);
+    if (r.ok) obj.ddn = r.value;
   }
   return obj;
 }

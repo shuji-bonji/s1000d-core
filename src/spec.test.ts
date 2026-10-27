@@ -14,6 +14,7 @@ import { checkAgainstBrexChain, findDefaultBrex, locateBrex, readBrex } from './
 import { createDirectoryBrexResolver } from './csdb.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
 import { CsdbIndex } from './csdb-index.js';
+import { readDdn, readDml, reconcileDdn, reconcileDml } from './dml/index.js';
 import { collectReferences, resolveReferences } from './refs/index.js';
 import { ApplicEvaluator, productFromPct, readAct, readCct, readPct } from './applic/index.js';
 import { countNodes, readContentFromXml } from './content/index.js';
@@ -337,4 +338,39 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     expect(got).toBe(expected);
     expect(withCandidates).toBeGreaterThan(0);
   }, 60000);
+
+  it('Bike Samples の DML と DDN を読み、CSDB と照合できる', () => {
+    const bikeFile = dmFiles.find((f) => /bike/i.test(f))!;
+    const bikeDir = dirname(bikeFile);
+    const index = CsdbIndex.fromDirs([bikeDir]);
+    const dmlObj = index.objects.find((o) => o.kind === 'dml');
+    const ddnObj = index.objects.find((o) => o.kind === 'ddn');
+    expect(dmlObj?.dml?.dmlCode.modelIdentCode).toBe('S1000DBIKE');
+    expect(ddnObj?.ddn?.ddnCode.modelIdentCode).toBe('S1000DBIKE');
+    const dml = readDml(index.read(dmlObj!));
+    expect(dml.ok).toBe(true);
+    if (!dml.ok) return;
+    expect(dml.value.entries.length).toBeGreaterThan(100);
+    expect(dml.value.entries.every((e) => e.kind === 'dm' || e.kind === 'pm')).toBe(true);
+    const rec = reconcileDml(dml.value, index);
+    // Bike Samples の DML は CSDB の DM・PM をすべて挙げ、版も一致する（配布物の実測）
+    expect(rec.counts['not-found']).toBe(0);
+    expect(rec.counts['issue-mismatch']).toBe(0);
+    expect(rec.counts.found).toBe(rec.entryCount);
+    const ddn = readDdn(index.read(ddnObj!));
+    expect(ddn.ok).toBe(true);
+    if (!ddn.ok) return;
+    expect(ddn.value.items.length).toBeGreaterThan(100);
+    const drec = reconcileDdn(ddn.value, index);
+    // 配布物の実測: DDN が挙げる 184 件のうち、IMF-C0419-S1000D0392-002-01 は版違い（DDN は _000-01、CSDB は _001-00）、
+    // ICN-C0419-S1000D0NNN-001-01（.SVG と IMF 2 件）は配布物に無い。DME-（拡張 DMC）の 2 件は索引が kind dme で拾う
+    expect(drec.counts['issue-mismatch']).toBe(1);
+    expect(drec.counts['not-found']).toBe(3);
+    expect(
+      drec.items
+        .filter((i) => i.state === 'not-found')
+        .every((i) => /S1000D0NNN/.test(i.item.fileName)),
+    ).toBe(true);
+    expect(index.objects.filter((o) => o.kind === 'dme')).toHaveLength(2);
+  });
 });

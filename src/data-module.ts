@@ -56,7 +56,7 @@ export function readDmCodeElement(el: Element): ParseResult<DmCode> {
   return { ok: true, value: value as DmCode };
 }
 
-function readIssueInfo(el: Element | undefined): IssueInfo | undefined {
+export function readIssueInfo(el: Element | undefined): IssueInfo | undefined {
   const issueNumber = attr(el, 'issueNumber');
   const inWork = attr(el, 'inWork');
   return issueNumber !== undefined ? { issueNumber, inWork: inWork ?? '00' } : undefined;

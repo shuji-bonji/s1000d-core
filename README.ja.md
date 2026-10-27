@@ -26,6 +26,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | 配布物の中の `xml_schema_flat/` を探し、`xsi:noNamespaceSchemaLocation` から使う XSD を決める | `findSchemaDirs` / `locateXsd` |
 | PMC の分解・組み立てと、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引 | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
 | CSDB の置き場所の差し替え（既定はフォルダー。データベースや API の実装を差し込める） | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
+| DML（データモジュールリスト）・DDN（納入票）の読み取りと、CSDB との照合（無い・版が違う・DML に載っていない） | `readDml` / `readDdn` / `reconcileDml` / `reconcileDdn` / `parseDmlFileName` / `parseDdnFileName` |
 | 参照（`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`）を集め、参照先の有無を理由付きで返す | `collectReferences` / `resolveReferences` |
 | 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
@@ -172,6 +173,35 @@ await verifyDataModule(xml, { references: { csdb } });  // CsdbIndex・CsdbSourc
 ```
 
 `CsdbObject.path` は置き場所の中での識別子で、フォルダーならファイルのパス、`MemoryCsdbSource` なら `path` に与えた文字列（省くとファイル名）です。応答にはそのまま載ります。書き戻しは段階 3（writer）で足します。
+
+## DML・DDN と CSDB の照合
+
+データモジュールリスト（DML、`dml.xsd`）と納入票（DDN、`ddn.xsd`）を読み、CSDB と照合します。プロジェクト管理の土台です（段階 2.5）。
+
+```ts
+import { CsdbIndex, readDdn, readDml, reconcileDdn, reconcileDml } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+const dmlObj = csdb.objects.find((o) => o.kind === 'dml')!;
+const dml = readDml(csdb.read(dmlObj));
+if (dml.ok) {
+  const r = reconcileDml(dml.value, csdb);
+  console.log(r.counts);        // { found, 'issue-mismatch', 'not-found', 'not-checked' }
+  console.log(r.notListed);     // CSDB にあるのに DML に載っていない DM・PM
+}
+const ddnObj = csdb.objects.find((o) => o.kind === 'ddn')!;
+const ddn = readDdn(csdb.read(ddnObj));
+if (ddn.ok) console.log(reconcileDdn(ddn.value, csdb).items.filter((i) => i.state !== 'found'));
+```
+
+| 判定 | 意味 |
+|---|---|
+| `found` | 対象が CSDB にある（DML の行に発行情報があれば、その版がある） |
+| `issue-mismatch` | 対象はあるが、DML・DDN が指す版が無い。`foundIssueInfo` は CSDB にある最新の版 |
+| `not-found` | 対象が CSDB に無い |
+| `not-checked` | 照合の対象外（DML の comment への参照） |
+
+DML の行は `dmRef` / `pmRef` / `infoEntityRef`（ICN）/ `dmlRef` / `commentRef` のどれか 1 つを持ちます。`dmlType`・`dmlEntryType`・`issueType` の値は解釈せず、XSD の列挙をそのまま返します。`notListed` は DML の行に出てくるモデル識別コードの DM・PM だけを対象にし、言語は見ません。DDN は `dispatchFileName` をファイル名で照合し、発行情報（`_NNN-NN`）だけ違う名前があれば `issue-mismatch` にします。拡張 DMC のデータモジュール（`DME-` で始まるファイル名）は索引が `kind: 'dme'` で拾いますが、DMC では探せません（ファイル名では探せます）。
 
 ## XML と XPath のライブラリ
 

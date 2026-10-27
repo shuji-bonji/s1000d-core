@@ -40,3 +40,15 @@ export * from './refs/index.js';
 export * from './applic/index.js';
 export * from './content/index.js';
 export * from './fix/index.js';
+export {
+  CONFIG_PATH_ENV,
+  CSDB_DIR_ENV,
+  SPEC_DIR_ENV,
+  resolveStackConfig,
+  specDirHowTo,
+  stackConfigPath,
+  type ResolveStackConfigOptions,
+  type ResolvedStackConfig,
+  type StackConfigFile,
+  type StackConfigSource,
+} from './stack-config.js';

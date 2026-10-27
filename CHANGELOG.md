@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-10-27)
+
+### 追加
+
+- 配布物の場所と CSDB の場所を決める `resolveStackConfig`（`src/stack-config.ts`）。環境変数 `S1000D_SPEC_DIR` / `S1000D_CSDB_DIR` を先に読み、無ければ設定ファイル（既定 `~/.config/s1000d-stack/config.json`、`XDG_CONFIG_HOME` に従う、`S1000D_CONFIG` で変更可）の `specDir` / `csdbDirs` を読みます。Claude Desktop が plugin のサーバーに環境変数を渡さず、plugin の `env` の `${VAR}` も置き換えないため、MCP 3 本が共通に使う入口として足しました。置き換えられずに渡った `${VAR}` は使わず、`warnings` に理由を書きます。
+
 ## 0.3.0 (2026-10-27)
 
 段階 2.5 の修正提案（`suggestFixes`）と、BREX の NOTATION の照合の修正。利用側の `^0.2.0` は 0.3.0 を含まないため、依存範囲を `^0.3.0` に上げてください。NOTATION の照合の修正により、除外だけの `notationRuleList` を持つ BREX に照合したときの違反の件数が変わります。
@@ -12,7 +18,6 @@
   - 参照: 情報コード・システム差異コードだけ違う DMC、CSDB にある版（`issueMismatch`）、巻だけ違う PMC、拡張子だけ違う ICN、近い id（`suggestReferenceFixes`、`nearMatches` / `editDistance`）。仕様書の章への `dmRef` は候補を作らず説明だけを返します。
   - 適用性: 製品の値が足りず判定不能になった適用性を集め（`findUndeterminedApplicability`）、ACT・CCT・PCT の値を `provide` の候補にします（`suggestApplicabilityFixes`）。
 - `findApplicTables`（対象 DM の ACT・CCT・PCT を CSDB から探す）。s1000d-reader-mcp の `services/context.ts` にあった処理を、s1000d-verify-mcp と共有するために移しました。
-
 
 ### 修正
 

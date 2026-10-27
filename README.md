@@ -29,6 +29,7 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Read content (descript / proced / process / fault / pm) into a common shape (headings, paragraphs, steps, warnings, illustrations, tables, references) | `readContent` / `readContentFromXml` |
 | Applicability: read the ACT, CCT and PCT, and evaluate `assert` / `evaluate` with three values (applicable / notApplicable / undetermined) | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
 | Validate one data module (well-formedness, XSD, BREX, references) in one call and return the verification status `VerificationStatus` | `verifyDataModule` |
+| Decide the distribution folder (`specDir`) and the CSDB folders (`csdbDirs`) from environment variables or a config file | `resolveStackConfig` / `stackConfigPath` / `specDirHowTo` |
 | Decide fix candidates deterministically from the verification result (XSD, BREX, references) and from undetermined applicability | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
 
 ```ts
@@ -94,6 +95,19 @@ try {
 ```
 
 `VerificationStatus` has no single boolean that states S1000D conformance. Even when the machine checks of XSD and BREX pass, the nonContextRules (`brex.manualChecks`) and the business rules documents that people read remain.
+
+## Where the distribution and the CSDB are
+
+`resolveStackConfig` decides where the S1000D distribution obtained by the user is, and where the project's CSDB is. It reads the environment variables `S1000D_SPEC_DIR` / `S1000D_CSDB_DIR` first, then a config file. The default location of the config file is `~/.config/s1000d-stack/config.json` (under `XDG_CONFIG_HOME` if it is set), and `S1000D_CONFIG` changes it.
+
+```json
+{
+  "specDir": "~/s1000d/issue-7",
+  "csdbDirs": ["~/projects/kenbaiki/csdb"]
+}
+```
+
+Paths that start with `~/` and paths relative to the folder of the config file are accepted. The config file exists because MCP hosts such as Claude Desktop do not pass environment variables to servers installed as plugins. If the host passes `${S1000D_SPEC_DIR}` through as literal text without substituting it, that value is ignored, the config file is read instead, and the reason is written to `warnings`.
 
 ## Fix suggestions
 

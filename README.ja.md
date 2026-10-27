@@ -29,6 +29,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |
 | 1 件のデータモジュールの検証（整形式・XSD・BREX・参照）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
+| 配布物の場所（`specDir`）と CSDB の場所（`csdbDirs`）を、環境変数か設定ファイルから決める | `resolveStackConfig` / `stackConfigPath` / `specDirHowTo` |
 | 検証結果（XSD・BREX・参照）と適用性の判定不能から、修正の候補を決定論的に決める | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
 
 ```ts
@@ -94,6 +95,19 @@ try {
 ```
 
 `VerificationStatus` には S1000D 準拠を表す 1 つの真偽値を置いていません。XSD と BREX の機械判定に通っても、nonContextRules（`brex.manualChecks`）と人が読むビジネスルール文書が残るためです。
+
+## 配布物と CSDB の場所
+
+`resolveStackConfig` は、利用者が入手した S1000D の配布物の場所と、プロジェクトの CSDB の場所を決めます。読む順番は、環境変数 `S1000D_SPEC_DIR` / `S1000D_CSDB_DIR`、次に設定ファイルです。設定ファイルの既定の場所は `~/.config/s1000d-stack/config.json`（`XDG_CONFIG_HOME` があればその下）で、`S1000D_CONFIG` で変えられます。
+
+```json
+{
+  "specDir": "~/s1000d/issue-7",
+  "csdbDirs": ["~/projects/kenbaiki/csdb"]
+}
+```
+
+`~/` で始まるパスと、設定ファイルのあるフォルダーからの相対パスも使えます。設定ファイルを用意したのは、Claude Desktop などの MCP ホストが plugin で入れたサーバーに環境変数を渡さないためです。ホストが `${S1000D_SPEC_DIR}` を置き換えずに文字のまま渡したときは、その値を使わずに設定ファイルを読み、`warnings` に理由を書きます。
 
 ## 修正提案
 

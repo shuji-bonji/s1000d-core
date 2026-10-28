@@ -1,6 +1,6 @@
 {
   "name": "@shuji-bonji/s1000d-core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Core library for reading S1000D® CSDB objects: DMC/ICN parsing, identification and status section, XML/XPath layer. Not affiliated with ASD.",
   "keywords": [
     "s1000d",

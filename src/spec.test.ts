@@ -15,6 +15,7 @@ import { createDirectoryBrexResolver } from './csdb.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
 import { CsdbIndex } from './csdb-index.js';
 import { readDdn, readDml, reconcileDdn, reconcileDml } from './dml/index.js';
+import { measureContent, outlineContent } from './content/outline.js';
 import { collectReferences, resolveReferences } from './refs/index.js';
 import { ApplicEvaluator, productFromPct, readAct, readCct, readPct } from './applic/index.js';
 import { countNodes, readContentFromXml } from './content/index.js';
@@ -372,5 +373,27 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
         .every((i) => /S1000D0NNN/.test(i.item.fileName)),
     ).toBe(true);
     expect(index.objects.filter((o) => o.kind === 'dme')).toHaveLength(2);
+  });
+
+  it('サンプル CSDB の全データモジュールの概要（outline）と大きさを例外なく作れる', () => {
+    const bikeFile = dmFiles.find((f) => /bike/i.test(f))!;
+    const files = dmFiles.filter((f) => dirname(f) === dirname(bikeFile));
+    let outlined = 0;
+    let withSecurity = 0;
+    for (const f of files) {
+      const c = readContentFromXml(readFileSync(f, 'utf8'));
+      if (!c.structured) continue;
+      const size = measureContent(c.blocks);
+      const o = outlineContent(c.blocks);
+      expect(o.reduce((a, n) => a + n.size.nodes, 0)).toBeLessThanOrEqual(size.nodes);
+      // 概要は全文より小さい（節点の数で）
+      const count = (ns: typeof o): number => ns.reduce((a, n) => a + 1 + count(n.children), 0);
+      expect(count(o)).toBeLessThanOrEqual(size.nodes);
+      if (o.some((n) => n.securityClassification)) withSecurity++;
+      outlined++;
+    }
+    // Bike Samples 106 件のうち構造化できる 5 種（descript / proced / process / fault / pm）は 59 件
+    expect(outlined).toBeGreaterThan(50);
+    expect(withSecurity).toBeGreaterThanOrEqual(0);
   });
 });

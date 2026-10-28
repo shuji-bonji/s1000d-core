@@ -66,6 +66,8 @@ export interface ContentNode {
   choices?: Array<{ text: string; nextActionRefId?: string }>;
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */
   applicRefId?: string;
+  /** 要素自身の `@securityClassification`（機密区分。値は解釈しない。無ければ親または DM 全体の区分に従う） */
+  securityClassification?: string;
   /** この節点自身が持つ参照 */
   refs?: ContentRef[];
   /** その他の属性（process の variableName、changeMark など） */
@@ -88,4 +90,34 @@ export interface DataModuleContent {
   notes: string[];
   /** 知らなかった要素名とその数（読み取り部分の改善の材料） */
   unknownElements: Record<string, number>;
+}
+
+/** 概要（outline）の節点。見出し・手順の番号・最初の 1 文と、部分木の大きさだけを持つ */
+export interface OutlineNode {
+  kind: ContentNodeKind;
+  element: string;
+  id?: string;
+  title?: string;
+  number?: string;
+  level?: 'warning' | 'caution' | 'note';
+  /** `text` の最初の 1 文（最大 `maxSentenceLength` 文字） */
+  firstSentence?: string;
+  applicRefId?: string;
+  securityClassification?: string;
+  /** この節点を含む部分木の大きさ。LLM が読む量の見当を付けるために使う */
+  size: ContentSize;
+  location: NodeLocation;
+  children: OutlineNode[];
+}
+
+/** 部分木の大きさ */
+export interface ContentSize {
+  /** 節点の数（自身を含む） */
+  nodes: number;
+  /** `title` と `text`、表のセルの文字数の合計 */
+  chars: number;
+  /** 種類ごとの節点の数 */
+  byKind: Partial<Record<ContentNodeKind, number>>;
+  /** 警告・注意・注記の数 */
+  admonitions: { warning: number; caution: number; note: number };
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0 (2026-10-28)
+
+### 追加
+
+- 本文の概要と大きさ（`src/content/outline.ts`、段階 2.5 の作業 7、D-19）。`outlineContent` は本文の木から見出し・手順の番号・最初の 1 文（`firstSentence`）・警告の数だけを残した `OutlineNode[]` を返し、`measureContent` は部分木の大きさ `ContentSize`（節点数・文字数・種類ごとの数・警告の数）を返します。LLM が全文を読む前に当たりを付け、読む量の予算を立てるためのものです。残す種類は既定で section / step / requirements / sequence / if / dialog / entry で、`keep`・`maxDepth`・`maxSentenceLength` で変えられます。
+- `ContentNode` に `securityClassification`（要素自身の `@securityClassification`。値は解釈しない）を足しました。概要の節点にも付きます。
+
 ## 0.6.0 (2026-10-28)
 
 ### 追加

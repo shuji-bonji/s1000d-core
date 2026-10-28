@@ -27,6 +27,7 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Parse and format a PMC, and index a CSDB that also picks up objects other than DMs (PMC, DML, DDN, IMF, UPF, ICN) | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
 | Swap where the CSDB lives (a folder by default; a database or API implementation can be plugged in) | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
 | Read a DML (data module list) and a DDN (data dispatch note) and reconcile them with the CSDB (missing, different issue, not listed in the DML) | `readDml` / `readDdn` / `reconcileDml` / `reconcileDdn` / `parseDmlFileName` / `parseDdnFileName` |
+| Outline of the content (headings, step numbers, first sentence, number of warnings) and the size of each node (nodes, characters) | `outlineContent` / `measureContent` / `firstSentence` |
 | Collect references (`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`) and report whether each target exists, with the reason | `collectReferences` / `resolveReferences` |
 | Read content (descript / proced / process / fault / pm) into a common shape (headings, paragraphs, steps, warnings, illustrations, tables, references) | `readContent` / `readContentFromXml` |
 | Applicability: read the ACT, CCT and PCT, and evaluate `assert` / `evaluate` with three values (applicable / notApplicable / undetermined) | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |

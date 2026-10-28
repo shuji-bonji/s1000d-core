@@ -300,6 +300,8 @@ class Reader {
     if (id) node.id = id;
     const applicRefId = attr(el, 'applicRefId');
     if (applicRefId) node.applicRefId = applicRefId;
+    const security = attr(el, 'securityClassification');
+    if (security) node.securityClassification = security;
     const refs: ContentRef[] = [];
 
     const title = firstChild(el, 'title') ?? firstChild(el, 'pmEntryTitle');

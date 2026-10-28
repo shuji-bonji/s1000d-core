@@ -27,6 +27,7 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | PMC の分解・組み立てと、DMC 以外（PMC・DML・DDN・IMF・UPF・ICN）も拾う CSDB の索引 | `parsePmc` / `parsePmcFileName` / `listCsdbObjects` / `CsdbIndex` |
 | CSDB の置き場所の差し替え（既定はフォルダー。データベースや API の実装を差し込める） | `CsdbSource` / `DirectoryCsdbSource` / `MemoryCsdbSource` / `CsdbIndex.fromSource` |
 | DML（データモジュールリスト）・DDN（納入票）の読み取りと、CSDB との照合（無い・版が違う・DML に載っていない） | `readDml` / `readDdn` / `reconcileDml` / `reconcileDdn` / `parseDmlFileName` / `parseDdnFileName` |
+| 本文の概要（見出し・手順の番号・最初の 1 文・警告の数）と、節点ごとの大きさ（節点数・文字数） | `outlineContent` / `measureContent` / `firstSentence` |
 | 参照（`dmRef` / `pmRef` / ICN / `internalRef` / `applicRefId`）を集め、参照先の有無を理由付きで返す | `collectReferences` / `resolveReferences` |
 | 本文（descript / proced / process / fault / pm）を共通の形（見出し・段落・手順・警告・図・表・参照）に読み取る | `readContent` / `readContentFromXml` |
 | 適用性: ACT・CCT・PCT の読み取りと、`assert` / `evaluate` の 3 値評価（applicable / notApplicable / undetermined） | `readAct` / `readCct` / `readPct` / `ApplicEvaluator` / `evaluateApplic` |

@@ -13,6 +13,7 @@ export {
 } from './collect.js';
 export {
   resolveReferences,
+  type KnownObject,
   type ReferenceReport,
   type ResolveOptions,
   type ResolvedReference,

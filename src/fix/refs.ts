@@ -2,7 +2,7 @@
  * 未解決の参照（と版の食い違い）から修正候補を作る。
  *
  * - dmRef が CSDB に無い: CSDB にある「情報コード（とそのバリアント）以外が同じ DMC」「システム差異コードだけ違う DMC」。
- *   モデル識別コード S1000D への参照は仕様書の章への参照で CSDB には無いので、候補を作らず説明だけを返す
+ *   モデル識別コード S1000D への参照は仕様書の章への参照で CSDB には無いので、候補を作らず説明だけを返す（CSDB を渡していなくても同じ。no-csdb より先に判定する）
  * - dmRef / pmRef の版が違う（解決はしたが issueMismatch）: CSDB にある版
  * - pmRef が CSDB に無い: 巻（pmVolume）だけ違う PMC
  * - ICN の ENTITY 宣言が無い: 実体名と同じ名前（拡張子を除く）のファイル
@@ -81,6 +81,18 @@ export function suggestReferenceFixes(
   for (const u of report.unresolved) {
     const r = u.reference;
     const base = { location: r.location, problem: u.message };
+    // モデル識別コード S1000D の dmRef は仕様書の章への参照で、CSDB の有無にかかわらず CSDB には無い。
+    // CSDB を渡していなくても「CSDB を渡せ」とは言わない
+    if (r.kind === 'dmRef' && r.ref.dmCode.modelIdentCode.toUpperCase() === 'S1000D') {
+      add({
+        ...base,
+        candidates: [],
+        confidence: 'none',
+        source: 'modelIdentCode S1000D',
+        note: 'This dmRef points to a chapter of the S1000D specification (modelIdentCode "S1000D"). It is never in a project CSDB and is not an error.',
+      });
+      continue;
+    }
     if (u.reason === 'no-csdb') {
       add({
         ...base,
@@ -93,16 +105,6 @@ export function suggestReferenceFixes(
     switch (r.kind) {
       case 'dmRef': {
         const wanted = r.ref.dmCode;
-        if (wanted.modelIdentCode.toUpperCase() === 'S1000D') {
-          add({
-            ...base,
-            candidates: [],
-            confidence: 'none',
-            source: 'modelIdentCode S1000D',
-            note: 'This dmRef points to a chapter of the S1000D specification (modelIdentCode "S1000D"). It is never in a project CSDB and is not an error.',
-          });
-          break;
-        }
         const ranked: Array<{ rank: number; c: FixCandidate }> = [];
         if (csdb) {
           for (const o of distinctDms(csdb.objects)) {
@@ -273,18 +275,22 @@ export function suggestReferenceFixes(
     const r = res.reference;
     if (r.kind !== 'dmRef' && r.kind !== 'pmRef') continue;
     const wanted = r.kind === 'dmRef' ? r.ref.issueInfo : r.issueInfo;
+    const fromBrex = res.source === 'brex-chain';
+    const where = fromBrex ? 'the BREX layers' : 'the CSDB';
     add({
       location: r.location,
-      problem: `${res.target}: issue ${issueText(wanted)} is not in the CSDB; issue ${issueText(res.foundIssueInfo)} was found`,
+      problem: `${res.target}: issue ${issueText(wanted)} is not in ${where}; issue ${issueText(res.foundIssueInfo)} was found`,
       candidates: [
         {
           action: 'replace',
           value: issueText(res.foundIssueInfo),
           target: `${r.kind === 'dmRef' ? 'dmRefIdent' : 'pmRefIdent'}/issueInfo`,
-          description: `the issue found in the CSDB (${res.path ?? ''}); set issueNumber and inWork accordingly`,
+          description: fromBrex
+            ? 'the issue of the BREX layer that was followed; set issueNumber and inWork accordingly'
+            : `the issue found in the CSDB (${res.path ?? ''}); set issueNumber and inWork accordingly`,
         },
       ],
-      source: 'CsdbIndex',
+      source: fromBrex ? 'BREX chain' : 'CsdbIndex',
     });
   }
 

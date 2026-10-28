@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1 (2026-10-28)
+
+BREX の工程と参照の工程の食い違いを直しました。既存の API は変えていません（型に任意の項目を足しただけです）。
+
+### 修正
+
+- CSDB のフォルダーを渡さず BREX の解決器だけを渡すと、BREX の工程は既定 BREX の層をたどって照合できる（`brex.state: passed`）のに、参照の工程は `brexDmRef` を `no-csdb` で未解決として数え、`suggestFixes` も「CSDB のフォルダーを渡せ」と返していました。CSDB を渡しても、既定 BREX は CSDB ではなく `S1000D_SPEC_DIR` にあるので `not-found` になっていました。
+  - `ResolveOptions.knownObjects`（`KnownObject`: `kind: 'brex'`・`dmCode`・`issueInfo?`・`path?`）を足しました。`dmRef` が CSDB に無い（`no-csdb` か `not-found`）とき、同じ DMC がここにあれば解決済みにします。版の照合は CSDB と同じ（`issueInfo` 付きの参照で版が違えば `issueMismatch`）。`ResolvedReference.source`（`'csdb' | 'brex-chain'`）で、どこで見つかったかが分かります。
+  - `verifyDataModule` は、BREX の工程でたどれた層（DMC と版）を `knownObjects` に渡します。BREX の工程を省いた（`brex` なし）ときは渡さないので、従来どおり未解決になります。たどれなかった層も未解決のままです。`VerificationStatus.references` の `unresolvedCount` はその分だけ減り、`checked` は変わりません（たどれた層を指す `brexDmRef` だけの文書は `state: resolved` になります）。
+  - `suggestFixes` は、モデル識別コード `S1000D` の `dmRef`（仕様書の章への参照）を `no-csdb` より先に判定します。CSDB を渡していなくても「CSDB を渡せ」ではなく、仕様書への参照の注記を返します（`confidence: none`・候補なしは従来どおり）。BREX の層として解決した参照の版が違うときの置き換え提案は、`source: 'BREX chain'` と層の版を示します。
+
 ## 0.8.0 (2026-10-28)
 
 段階 3（writer）のための「書く側」の機能です（docs/design/writer-mcp.md、D-27）。既存の API は変えていません。

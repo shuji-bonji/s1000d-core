@@ -19,7 +19,7 @@ import type { BrexCheckReport, BrexDocument } from '../brex/types.js';
 import { CsdbIndex } from '../csdb-index.js';
 import type { CsdbSource } from '../csdb-source.js';
 import { collectReferences } from '../refs/collect.js';
-import { resolveReferences, type ReferenceReport } from '../refs/resolve.js';
+import { resolveReferences, type KnownObject, type ReferenceReport } from '../refs/resolve.js';
 import { findSchemaDirs, locateXsd, type LocateXsdResult, type SchemaDir } from './schemas.js';
 import type { VerificationStatus } from './types.js';
 
@@ -219,7 +219,17 @@ export async function verifyDataModule(
             ? CsdbIndex.fromDirs(options.references.csdb)
             : CsdbIndex.fromSource(options.references.csdb);
     const parsed = engine.parse(xml);
-    refReport = resolveReferences(collectReferences(parsed.document, engine), { csdb });
+    // BREX の工程でたどれた層は、CSDB の外（既定 BREX は S1000D_SPEC_DIR）にあっても「見つかっている」ので、
+    // その層を指す dmRef（brexDmRef など）を no-csdb / not-found の未解決にしない。BREX の工程を省いたときは渡さない
+    const knownObjects: KnownObject[] = (brexReport?.layers ?? []).map((l) => ({
+      kind: 'brex' as const,
+      dmCode: l.brex.dmCode,
+      ...(l.brex.issueInfo ? { issueInfo: l.brex.issueInfo } : {}),
+    }));
+    refReport = resolveReferences(collectReferences(parsed.document, engine), {
+      csdb,
+      knownObjects,
+    });
     status.references = {
       state: refReport.unresolved.length > 0 ? 'unresolved' : 'resolved',
       checked: refReport.checked,

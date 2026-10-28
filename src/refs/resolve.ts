@@ -2,15 +2,16 @@
  * 集めた参照の参照先があるかを確かめる。
  *
  * - dmRef / pmRef: CSDB の索引（CsdbIndex）から探す。issueInfo 付きの参照で版が違えば、見つかった版を添えて `issueMismatch: true`
+ * - dmRef が CSDB に無い（索引が無い場合を含む）とき、`knownObjects`（BREX の連鎖でたどれた層など、CSDB の外で見つかっているもの）に同じ DMC があれば解決済みにする（`source: 'brex-chain'`）
  * - icn: `@infoEntityIdent` → DOCTYPE の ENTITY 宣言 → 宣言の SYSTEM のファイル名を CSDB から探す。宣言が無ければ理由 `no-entity-declaration`
  * - internalRef / applicRef: 同じ文書の `@id` / `applic/@id` にあるか
  *
  * 適用性の評価（この製品に当てはまるか）はここでは行わない（reader、段階 2 の作業 4）。
  */
-import type { CsdbIndex, CsdbObject } from '../csdb-index.js';
-import { formatDmc } from '../dmc.js';
+import type { CsdbIndex } from '../csdb-index.js';
+import { formatDmc, sameDmc } from '../dmc.js';
 import { formatPmc } from '../pmc.js';
-import type { IssueInfo } from '../types.js';
+import type { DmCode, IssueInfo } from '../types.js';
 import type { CollectedReferences, Reference } from './collect.js';
 
 export type UnresolvedReason =
@@ -33,6 +34,8 @@ export interface ResolvedReference {
   path?: string;
   /** 見つかったファイルの発行情報（dmRef / pmRef） */
   foundIssueInfo?: IssueInfo;
+  /** どこで見つかったか: CSDB の索引 / BREX の連鎖でたどれた層（`ResolveOptions.knownObjects`） */
+  source?: 'csdb' | 'brex-chain';
   /** 参照の issueInfo と見つかった版が違う */
   issueMismatch?: boolean;
   /** ICN の NOTATION（宣言の NDATA） */
@@ -56,9 +59,23 @@ export interface ReferenceReport {
   counts: Record<Reference['kind'], { checked: number; unresolved: number }>;
 }
 
+/**
+ * CSDB の外ですでに見つかっているオブジェクト。既定 BREX は CSDB ではなく `S1000D_SPEC_DIR` にあるので、
+ * BREX の連鎖をたどれた層をここに渡すと、その層を指す dmRef（`brexDmRef` など）を未解決にしない。
+ */
+export interface KnownObject {
+  kind: 'brex';
+  dmCode: DmCode;
+  issueInfo?: IssueInfo;
+  /** 見つかったファイル（分かるときだけ） */
+  path?: string;
+}
+
 export interface ResolveOptions {
   /** 無ければ dmRef / pmRef / icn は `no-csdb` になる（internalRef / applicRef は文書内で判定できる） */
   csdb?: CsdbIndex;
+  /** CSDB に無い dmRef を、ここにある同じ DMC で解決する（CSDB が先。版の照合は CSDB と同じ） */
+  knownObjects?: KnownObject[];
 }
 
 function targetOf(r: Reference): string {
@@ -81,10 +98,10 @@ function sameIssue(a: IssueInfo | undefined, b: IssueInfo | undefined): boolean 
   return a.issueNumber === b.issueNumber && a.inWork === b.inWork;
 }
 
-function pickByIssue(
-  found: CsdbObject[],
+function pickByIssue<T>(
+  found: T[],
   wanted: IssueInfo | undefined,
-  info: (o: CsdbObject) => IssueInfo | undefined,
+  info: (o: T) => IssueInfo | undefined,
 ) {
   if (wanted) {
     const exact = found.find((o) => sameIssue(info(o), wanted) && info(o) !== undefined);
@@ -116,19 +133,32 @@ export function resolveReferences(
     const target = targetOf(r);
     switch (r.kind) {
       case 'dmRef': {
-        if (!options.csdb) {
-          miss(r, 'no-csdb', 'No CSDB folders were given to search');
-          break;
-        }
-        const found = options.csdb.findDataModules(r.ref.dmCode);
+        const found = options.csdb ? options.csdb.findDataModules(r.ref.dmCode) : [];
         if (found.length === 0) {
-          miss(r, 'not-found', `Data module ${target} is not in the CSDB`);
+          // CSDB に無い（索引が無い場合を含む）: CSDB の外で見つかっているもの（BREX の連鎖の層）を探す
+          const known = (options.knownObjects ?? []).filter((k) => sameDmc(k.dmCode, r.ref.dmCode));
+          if (known.length > 0) {
+            const picked = pickByIssue(known, r.ref.issueInfo, (k) => k.issueInfo);
+            const out: ResolvedReference = {
+              reference: r,
+              target,
+              source: 'brex-chain',
+              foundIssueInfo: picked.obj.issueInfo,
+            };
+            if (picked.obj.path !== undefined) out.path = picked.obj.path;
+            if (picked.mismatch) out.issueMismatch = true;
+            resolved.push(out);
+            break;
+          }
+          if (!options.csdb) miss(r, 'no-csdb', 'No CSDB folders were given to search');
+          else miss(r, 'not-found', `Data module ${target} is not in the CSDB`);
           break;
         }
         const { obj, mismatch } = pickByIssue(found, r.ref.issueInfo, (o) => o.dm?.issueInfo);
         const out: ResolvedReference = {
           reference: r,
           target,
+          source: 'csdb',
           path: obj.path,
           foundIssueInfo: obj.dm?.issueInfo,
         };
@@ -150,6 +180,7 @@ export function resolveReferences(
         const out: ResolvedReference = {
           reference: r,
           target,
+          source: 'csdb',
           path: obj.path,
           foundIssueInfo: obj.pm?.issueInfo,
         };
@@ -179,6 +210,7 @@ export function resolveReferences(
         resolved.push({
           reference: r,
           target,
+          source: 'csdb',
           path: found[0].path,
           notation: r.declaration.notation,
         });

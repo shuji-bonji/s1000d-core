@@ -6,7 +6,7 @@
  * - 照合は各層に個別に行う（Chap 7.9）
  */
 import { formatDmc, sameDmc } from '../dmc.js';
-import { readDataModuleInfo } from '../data-module.js';
+import { readBrexDmRefOf, readDataModuleInfo, readNonDmIdent } from '../data-module.js';
 import type { DmRef } from '../types.js';
 import type { XmlEngine } from '../xml/engine.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
@@ -59,7 +59,8 @@ export async function resolveBrexChain(
 }
 
 /**
- * 対象 DM の brexDmRef から連鎖をたどり、すべての層に照合する。
+ * 対象の brexDmRef から連鎖をたどり、すべての層に照合する。
+ * 対象のルートは `dmodule`（dmStatus）・`pm`（pmStatus）・`comment`（commentStatus）のどれでもよい。
  * `extraLayers` を渡すと、対象が参照していない BREX にも照合できる（Chap 7.9 の注記）。
  */
 export async function checkAgainstBrexChain(
@@ -69,15 +70,18 @@ export async function checkAgainstBrexChain(
 ): Promise<BrexCheckReport> {
   const engine = options.engine ?? defaultXmlEngine;
   const info = readDataModuleInfo(xml, engine);
-  const chain = await resolveBrexChain(info.identAndStatus?.brexDmRef, resolve);
-  const layers = [...chain.layers, ...(options.extraLayers ?? [])];
   const parsed = engine.parse(xml);
+  const chain = await resolveBrexChain(readBrexDmRefOf(parsed.document, engine), resolve);
+  const layers = [...chain.layers, ...(options.extraLayers ?? [])];
+  const nonDm = readNonDmIdent(parsed.document, engine);
   const reports = layers.map((b) =>
     checkAgainstBrexLayer(parsed.document, b, info.schemaLocation, engine),
   );
   return {
     target: {
       dmCode: info.identAndStatus?.dmCode,
+      ...(nonDm.pmCode ? { pmCode: nonDm.pmCode } : {}),
+      ...(nonDm.commentCode ? { commentCode: nonDm.commentCode } : {}),
       schemaLocation: info.schemaLocation,
       schemaName: info.schemaName,
     },

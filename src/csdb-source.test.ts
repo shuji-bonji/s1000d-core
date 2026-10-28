@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,10 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createBrexResolver, createDirectoryBrexResolver } from './csdb.js';
 import { CsdbIndex } from './csdb-index.js';
 import {
+  CsdbWriteConflictError,
   DirectoryCsdbSource,
   MemoryCsdbSource,
   classifyCsdbFileName,
+  isWritableCsdbSource,
   type CsdbSource,
+  type WritableCsdbSource,
 } from './csdb-source.js';
 import { formatDmc, parseDmc } from './dmc.js';
 import { collectReferences, resolveReferences } from './refs/index.js';
@@ -153,5 +156,98 @@ describe('DirectoryCsdbSource（既定）', () => {
     const index = CsdbIndex.fromSource(custom);
     expect(index.read(index.objects[0]!)).toContain('<dmodule');
     expect(calls).toEqual([BREX]);
+  });
+});
+
+/** Memory と Directory で同じ約束（書いたものが list() と readText() で読める、write-conflict、overwrite、索引に入る）を確かめる */
+function writableContract(name: string, make: () => { source: WritableCsdbSource; dir?: string }) {
+  describe(`WritableCsdbSource: ${name}`, () => {
+    it('型ガードで書き込める置き場所だと分かる。読むだけの CsdbSource は違う', () => {
+      expect(isWritableCsdbSource(make().source)).toBe(true);
+      expect(isWritableCsdbSource({ description: 'x', list: () => [], readText: () => '' })).toBe(
+        false,
+      );
+    });
+    it('書いた DM が list() と readText() で読め、CsdbIndex.fromSource の索引に入る', () => {
+      const { source } = make();
+      const written = source.writeText(DESCRIPT, fx('kenbaiki-descript.xml'));
+      const listed = source.list().find((o) => o.fileName === DESCRIPT);
+      expect(listed).toBeDefined();
+      expect(listed!.path).toBe(written);
+      expect(source.readText(listed!)).toBe(fx('kenbaiki-descript.xml'));
+      const index = CsdbIndex.fromSource(source);
+      const dm = index.findDataModules(parseDmc('KENBAIKI-A-10-20-00-00A-040A-D').value!);
+      expect(dm).toHaveLength(1);
+      expect(index.read(dm[0]!)).toContain('指定席券売機');
+    });
+    it('相対パスの置き場所を指定でき、ICN の原本をバイトで書ける', () => {
+      const { source } = make();
+      const icn = source.writeBytes(
+        'icn/ICN-K0001-00001-001-01.PNG',
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      );
+      const obj = source.list().find((o) => o.fileName === 'ICN-K0001-00001-001-01.PNG');
+      expect(obj?.kind).toBe('icn');
+      expect(obj?.path).toBe(icn);
+    });
+    it('同じ path があれば write-conflict。overwrite: true なら置き換える（一覧は増えない）', () => {
+      const { source } = make();
+      source.writeText(DESCRIPT, '<dmodule id="1"/>');
+      const err = (() => {
+        try {
+          source.writeText(DESCRIPT, '<dmodule id="2"/>');
+        } catch (e) {
+          return e;
+        }
+      })();
+      expect(err).toBeInstanceOf(CsdbWriteConflictError);
+      expect((err as CsdbWriteConflictError).code).toBe('write-conflict');
+      expect(source.readText(source.list()[0]!)).toBe('<dmodule id="1"/>');
+      source.writeText(DESCRIPT, '<dmodule id="3"/>', { overwrite: true });
+      expect(source.list()).toHaveLength(1);
+      expect(source.readText(source.list()[0]!)).toBe('<dmodule id="3"/>');
+    });
+    it('CSDB の形でない名前は書けるが一覧には出ない', () => {
+      const { source } = make();
+      source.writeText('notes/README.md', 'memo');
+      expect(source.list()).toHaveLength(0);
+      expect(() => source.writeText('notes/README.md', 'again')).toThrow(CsdbWriteConflictError);
+    });
+  });
+}
+
+writableContract('MemoryCsdbSource', () => ({ source: new MemoryCsdbSource([], 'empty') }));
+
+const tmpDirs: string[] = [];
+writableContract('DirectoryCsdbSource（os.tmpdir の一時フォルダー）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 's1000d-core-write-'));
+  tmpDirs.push(dir);
+  return { source: new DirectoryCsdbSource([dir]), dir };
+});
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
+
+describe('DirectoryCsdbSource の書き込み先', () => {
+  it('最初のフォルダーに書き、親フォルダーを作り、前回の戻り値（絶対パス）で上書きできる', () => {
+    const a = mkdtempSync(join(tmpdir(), 's1000d-core-write-a-'));
+    const b = mkdtempSync(join(tmpdir(), 's1000d-core-write-b-'));
+    tmpDirs.push(a, b);
+    const source = new DirectoryCsdbSource([a, b]);
+    const path = source.writeText(`sub/dir/${DESCRIPT}`, 'one');
+    expect(path).toBe(join(a, 'sub', 'dir', DESCRIPT));
+    expect(readFileSync(path, 'utf8')).toBe('one');
+    expect(existsSync(join(b, 'sub'))).toBe(false);
+    source.writeText(path, 'two', { overwrite: true });
+    expect(readFileSync(path, 'utf8')).toBe('two');
+    expect(() => source.writeText(path, 'three')).toThrow(CsdbWriteConflictError);
+  });
+  it('置き場所の外には書かない', () => {
+    const a = mkdtempSync(join(tmpdir(), 's1000d-core-write-c-'));
+    tmpDirs.push(a);
+    const source = new DirectoryCsdbSource([a]);
+    expect(() => source.writeText('../outside.xml', 'x')).toThrow(/outside/);
+    expect(() => source.writeText(join(tmpdir(), 'abs.xml'), 'x')).toThrow(/outside/);
+    expect(() => new DirectoryCsdbSource([]).writeText('a.xml', 'x')).toThrow(/no directory/);
   });
 });

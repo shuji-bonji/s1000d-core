@@ -19,3 +19,13 @@ export {
   type FindApplicOptions,
 } from './applic.js';
 export { suggestFixes, type SuggestFixesOptions } from './suggest.js';
+export {
+  applyFix,
+  applyFixes,
+  type ApplyFixItemResult,
+  type ApplyFixOptions,
+  type ApplyFixReason,
+  type ApplyFixResult,
+  type ApplyFixesResult,
+  type FixSelection,
+} from './apply.js';

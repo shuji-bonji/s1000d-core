@@ -1,0 +1,683 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shuji-bonji/s1000d-core/schema/draft.schema.json",
+  "title": "DraftDataModule",
+  "description": "データモジュール 1 件の入力（@shuji-bonji/s1000d-core の DraftDataModule）。$defs に DraftNode・DraftRef・DraftApplic・Allocation を持つ",
+  "$ref": "#/$defs/DraftDataModule",
+  "$defs": {
+    "DmCode": {
+      "description": "データモジュールコード（DMC）の構成要素",
+      "type": "object",
+      "properties": {
+        "modelIdentCode": {
+          "type": "string",
+          "description": "モデル識別コード（2〜14 文字）",
+          "pattern": "^[A-Z0-9]{2,14}$"
+        },
+        "systemDiffCode": {
+          "type": "string",
+          "description": "システム差異コード（1〜4 文字）",
+          "pattern": "^[A-Z0-9]{1,4}$"
+        },
+        "systemCode": {
+          "type": "string",
+          "description": "システムコード（2〜3 文字）",
+          "pattern": "^[A-Z0-9]{2,3}$"
+        },
+        "subSystemCode": {
+          "type": "string",
+          "description": "サブシステムコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "subSubSystemCode": {
+          "type": "string",
+          "description": "サブサブシステムコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "assyCode": {
+          "type": "string",
+          "description": "組立コード（2 または 4 文字）",
+          "pattern": "^([A-Z0-9]{2}|[A-Z0-9]{4})$"
+        },
+        "disassyCode": {
+          "type": "string",
+          "description": "分解コード（2 文字）",
+          "pattern": "^[A-Z0-9]{2}$"
+        },
+        "disassyCodeVariant": {
+          "type": "string",
+          "description": "分解コードバリアント（1〜3 文字）",
+          "pattern": "^[A-Z0-9]{1,3}$"
+        },
+        "infoCode": {
+          "type": "string",
+          "description": "情報コード（3 文字）",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "infoCodeVariant": {
+          "type": "string",
+          "description": "情報コードバリアント（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "itemLocationCode": {
+          "type": "string",
+          "description": "アイテムロケーションコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "learnCode": {
+          "type": "string",
+          "description": "学習コード（3 文字、学習用のみ）",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "learnEventCode": {
+          "type": "string",
+          "description": "学習イベントコード（1 文字、学習用のみ）",
+          "pattern": "^[A-Z0-9]$"
+        }
+      },
+      "required": [
+        "modelIdentCode",
+        "systemDiffCode",
+        "systemCode",
+        "subSystemCode",
+        "subSubSystemCode",
+        "assyCode",
+        "disassyCode",
+        "disassyCodeVariant",
+        "infoCode",
+        "infoCodeVariant",
+        "itemLocationCode"
+      ],
+      "additionalProperties": false
+    },
+    "DmCodePartial": {
+      "description": "DMC の一部だけを上書きする（Allocation.map 用）",
+      "type": "object",
+      "properties": {
+        "modelIdentCode": {
+          "type": "string",
+          "description": "モデル識別コード（2〜14 文字）",
+          "pattern": "^[A-Z0-9]{2,14}$"
+        },
+        "systemDiffCode": {
+          "type": "string",
+          "description": "システム差異コード（1〜4 文字）",
+          "pattern": "^[A-Z0-9]{1,4}$"
+        },
+        "systemCode": {
+          "type": "string",
+          "description": "システムコード（2〜3 文字）",
+          "pattern": "^[A-Z0-9]{2,3}$"
+        },
+        "subSystemCode": {
+          "type": "string",
+          "description": "サブシステムコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "subSubSystemCode": {
+          "type": "string",
+          "description": "サブサブシステムコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "assyCode": {
+          "type": "string",
+          "description": "組立コード（2 または 4 文字）",
+          "pattern": "^([A-Z0-9]{2}|[A-Z0-9]{4})$"
+        },
+        "disassyCode": {
+          "type": "string",
+          "description": "分解コード（2 文字）",
+          "pattern": "^[A-Z0-9]{2}$"
+        },
+        "disassyCodeVariant": {
+          "type": "string",
+          "description": "分解コードバリアント（1〜3 文字）",
+          "pattern": "^[A-Z0-9]{1,3}$"
+        },
+        "infoCode": {
+          "type": "string",
+          "description": "情報コード（3 文字）",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "infoCodeVariant": {
+          "type": "string",
+          "description": "情報コードバリアント（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "itemLocationCode": {
+          "type": "string",
+          "description": "アイテムロケーションコード（1 文字）",
+          "pattern": "^[A-Z0-9]$"
+        },
+        "learnCode": {
+          "type": "string",
+          "description": "学習コード（3 文字、学習用のみ）",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "learnEventCode": {
+          "type": "string",
+          "description": "学習イベントコード（1 文字、学習用のみ）",
+          "pattern": "^[A-Z0-9]$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "IssueInfo": {
+      "description": "発行情報（issueInfo 要素）",
+      "type": "object",
+      "properties": {
+        "issueNumber": {
+          "type": "string",
+          "description": "発行番号（3 桁）",
+          "pattern": "^\\d{3,4}$"
+        },
+        "inWork": {
+          "type": "string",
+          "description": "作業中番号（2 桁）",
+          "pattern": "^\\d{2}$"
+        }
+      },
+      "required": [
+        "issueNumber",
+        "inWork"
+      ],
+      "additionalProperties": false
+    },
+    "Language": {
+      "description": "言語（language 要素）",
+      "type": "object",
+      "properties": {
+        "languageIsoCode": {
+          "type": "string",
+          "description": "言語コード（例: ja）"
+        },
+        "countryIsoCode": {
+          "type": "string",
+          "description": "国コード（例: JP）"
+        }
+      },
+      "required": [
+        "languageIsoCode",
+        "countryIsoCode"
+      ],
+      "additionalProperties": false
+    },
+    "PmCode": {
+      "description": "パブリケーションモジュールコード（PMC）",
+      "type": "object",
+      "properties": {
+        "modelIdentCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{2,14}$"
+        },
+        "pmIssuer": {
+          "type": "string",
+          "description": "発行者コード（5 文字）",
+          "pattern": "^[A-Z0-9]{5}$"
+        },
+        "pmNumber": {
+          "type": "string",
+          "description": "出版物番号（5 文字）",
+          "pattern": "^[A-Z0-9]{5}$"
+        },
+        "pmVolume": {
+          "type": "string",
+          "description": "巻（2 文字）",
+          "pattern": "^[A-Z0-9]{2}$"
+        }
+      },
+      "required": [
+        "modelIdentCode",
+        "pmIssuer",
+        "pmNumber",
+        "pmVolume"
+      ],
+      "additionalProperties": false
+    },
+    "DraftRef": {
+      "description": "参照。text に埋め込まず、機械で解決できるよう分けて書く",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "dmRef",
+            "pmRef",
+            "internalRef",
+            "graphic",
+            "multimedia"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "description": "dmRef / pmRef は DMC・PMC、internalRef は同じ DM の id、graphic / multimedia は ICN か assetId"
+        },
+        "title": {
+          "type": "string",
+          "description": "dmRef / pmRef では参照先の題名、internalRef では表示する文字"
+        },
+        "multimediaType": {
+          "enum": [
+            "3D",
+            "audio",
+            "video",
+            "other"
+          ],
+          "description": "multimedia の種類。省略すると 'other'"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "DraftNode": {
+      "description": "内容部の節点。DraftDataModule.kind ごとに置ける kind が決まっている",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "section",
+            "para",
+            "list",
+            "listItem",
+            "definition",
+            "table",
+            "figure",
+            "admonition",
+            "step",
+            "requirements",
+            "sequence",
+            "if",
+            "dialog",
+            "entry"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "要素の id。fault の step、process の dialog・if では必須"
+        },
+        "title": {
+          "type": "string",
+          "description": "見出し。definition では用語、table・figure では表題"
+        },
+        "text": {
+          "type": "string",
+          "description": "この節点自身の文。参照は refs に書く。< と & はそのまま書く"
+        },
+        "level": {
+          "enum": [
+            "warning",
+            "caution",
+            "note"
+          ],
+          "description": "admonition の種類（admonition では必須）"
+        },
+        "ordered": {
+          "type": "boolean",
+          "description": "list が順序付きか"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "table の行（1 行目が見出し行）"
+        },
+        "question": {
+          "type": "string",
+          "description": "fault の step の問い。process の if では条件を人が読める文にしたもの"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "next": {
+                "type": "string",
+                "description": "同じ DM の step の id（fault では必須）"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "description": "fault の step の答えと次の手順。process の dialog では選択肢"
+        },
+        "applicRefId": {
+          "type": "string"
+        },
+        "securityClassification": {
+          "type": "string",
+          "description": "要素自身の機密区分"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftRef"
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftNode"
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "DraftAssert": {
+      "description": "適用性の 1 つの条件（assert）",
+      "type": "object",
+      "properties": {
+        "applicPropertyIdent": {
+          "type": "string"
+        },
+        "applicPropertyType": {
+          "enum": [
+            "prodattr",
+            "condition"
+          ]
+        },
+        "applicPropertyValues": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicPropertyIdent",
+        "applicPropertyType",
+        "applicPropertyValues"
+      ],
+      "additionalProperties": false
+    },
+    "DraftApplic": {
+      "description": "適用性（applic）",
+      "type": "object",
+      "properties": {
+        "displayText": {
+          "type": "string",
+          "description": "人が読む適用性の表示文"
+        },
+        "assert": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftAssert"
+          }
+        },
+        "andOr": {
+          "enum": [
+            "and",
+            "or"
+          ],
+          "description": "assert が 2 件以上のときに必須"
+        }
+      },
+      "required": [
+        "displayText"
+      ],
+      "additionalProperties": false
+    },
+    "DraftDataModule": {
+      "description": "データモジュール 1 件の入力。識別情報（採番の元）、題名、機密区分と内容部の木を持つ",
+      "type": "object",
+      "properties": {
+        "dmCode": {
+          "$ref": "#/$defs/DmCode"
+        },
+        "pmCode": {
+          "$ref": "#/$defs/PmCode"
+        },
+        "sourceId": {
+          "type": "string",
+          "description": "採番に使う識別子。dmCode（pm は pmCode）を省いたときに要る。同じ sourceId には同じ DMC を返す"
+        },
+        "kind": {
+          "enum": [
+            "descript",
+            "proced",
+            "process",
+            "fault",
+            "pm"
+          ]
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "issueInfo": {
+          "$ref": "#/$defs/IssueInfo"
+        },
+        "issueDate": {
+          "type": "string",
+          "description": "YYYY-MM-DD。省略時は実行環境の今日の日付",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "title": {
+          "type": "object",
+          "properties": {
+            "techName": {
+              "type": "string"
+            },
+            "infoName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "techName"
+          ],
+          "additionalProperties": false
+        },
+        "securityClassification": {
+          "type": "string",
+          "description": "機密区分（列挙のまま。省略を許さない）"
+        },
+        "responsiblePartnerCompany": {
+          "type": "string",
+          "description": "責任企業の企業コード。省略時は allocation.icn.cageCode"
+        },
+        "originator": {
+          "type": "string",
+          "description": "作成者の企業コード。省略時は allocation.icn.cageCode"
+        },
+        "applic": {
+          "$ref": "#/$defs/DraftApplic"
+        },
+        "brexDmRef": {
+          "$ref": "#/$defs/DmCode"
+        },
+        "body": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftNode"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "language",
+        "title",
+        "securityClassification",
+        "body"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "dmCode"
+          ]
+        },
+        {
+          "required": [
+            "pmCode"
+          ]
+        },
+        {
+          "required": [
+            "sourceId"
+          ]
+        }
+      ]
+    },
+    "InfoCodeSpec": {
+      "description": "情報コード（意味は付けない）",
+      "type": "object",
+      "properties": {
+        "infoCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "infoCodeVariant": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]$"
+        }
+      },
+      "required": [
+        "infoCode",
+        "infoCodeVariant"
+      ],
+      "additionalProperties": false
+    },
+    "Allocation": {
+      "description": "採番の規則。writer は状態を持たず、ledger を入力で受け取り応答で返す",
+      "type": "object",
+      "properties": {
+        "modelIdentCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{2,14}$"
+        },
+        "systemDiffCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,4}$"
+        },
+        "map": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/DmCodePartial"
+          },
+          "description": "sourceId → DMC の一部。無い sourceId は rules で決める"
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "sns": {
+              "type": "object",
+              "properties": {
+                "systemCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9]{2,3}$"
+                },
+                "subSystemCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9]$"
+                },
+                "subSubSystemCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9]$"
+                },
+                "assyCode": {
+                  "type": "string",
+                  "pattern": "^([A-Z0-9]{2}|[A-Z0-9]{4})$"
+                }
+              },
+              "required": [
+                "systemCode",
+                "subSystemCode",
+                "subSubSystemCode",
+                "assyCode"
+              ],
+              "additionalProperties": false
+            },
+            "disassyCode": {
+              "type": "string",
+              "description": "指定すると分解コードを連番にしない",
+              "pattern": "^[A-Z0-9]{2}$"
+            },
+            "disassyCodeVariant": {
+              "type": "string",
+              "description": "省略時は 'A'",
+              "pattern": "^[A-Z0-9]{1,3}$"
+            },
+            "infoCodeByKind": {
+              "type": "object",
+              "properties": {
+                "descript": {
+                  "$ref": "#/$defs/InfoCodeSpec"
+                },
+                "proced": {
+                  "$ref": "#/$defs/InfoCodeSpec"
+                },
+                "process": {
+                  "$ref": "#/$defs/InfoCodeSpec"
+                },
+                "fault": {
+                  "$ref": "#/$defs/InfoCodeSpec"
+                },
+                "pm": {
+                  "$ref": "#/$defs/InfoCodeSpec"
+                }
+              },
+              "additionalProperties": false,
+              "description": "kind ごとの情報コード。既定は無く、省略した kind を採番すると入力の誤りになる"
+            },
+            "itemLocationCode": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]$"
+            }
+          },
+          "required": [
+            "sns",
+            "infoCodeByKind",
+            "itemLocationCode"
+          ],
+          "additionalProperties": false
+        },
+        "icn": {
+          "type": "object",
+          "properties": {
+            "cageCode": {
+              "type": "string",
+              "description": "ICN の CAGE コード",
+              "pattern": "^[A-Z0-9]{5}$"
+            },
+            "next": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "次に使う連番。応答に次の値を返す"
+            }
+          },
+          "required": [
+            "cageCode",
+            "next"
+          ],
+          "additionalProperties": false
+        },
+        "brexDmRef": {
+          "$ref": "#/$defs/DmCode"
+        },
+        "ledger": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "sourceId → DMC / PMC、assetId → ICN。前回の応答の ledger をそのまま渡す"
+        }
+      },
+      "required": [
+        "modelIdentCode",
+        "systemDiffCode",
+        "rules",
+        "icn"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

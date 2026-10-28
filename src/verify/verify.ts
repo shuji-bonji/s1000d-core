@@ -5,7 +5,7 @@
  * XSD に違反があっても BREX の照合は続ける（XSD の誤りが BREX の違反を生むことがあるので、呼び出し側が注記する）。
  */
 import { formatDmc } from '../dmc.js';
-import { readDataModuleInfo } from '../data-module.js';
+import { readDataModuleInfo, readNonDmIdent } from '../data-module.js';
 import type { DataModuleInfo } from '../types.js';
 import { XmlParseError, type XmlEngine } from '../xml/engine.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
@@ -127,10 +127,14 @@ export async function verifyDataModule(
     status.references.reason = 'not well-formed';
     return { status, schema };
   }
+  // pm / comment は identAndStatus が無いので、識別コードを別に読む（dmodule では空）
+  const nonDm = readNonDmIdent(engine.parse(xml).document, engine);
   status.target = {
     path: options.path,
     dmCode: info.identAndStatus?.dmCode,
-    issueInfo: info.identAndStatus?.issueInfo,
+    ...(nonDm.pmCode ? { pmCode: nonDm.pmCode } : {}),
+    ...(nonDm.commentCode ? { commentCode: nonDm.commentCode } : {}),
+    issueInfo: info.identAndStatus?.issueInfo ?? nonDm.issueInfo,
     schemaName: info.schemaName,
     issue: info.issue,
   };

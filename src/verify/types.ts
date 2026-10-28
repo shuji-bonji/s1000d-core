@@ -5,7 +5,8 @@
  * reader はすべての応答にこれを含め、「どこまで確認済みか」を LLM と利用者に伝える。
  * S1000D 準拠を 1 つの真偽値で表す項目は意図的に置かない（nonContextRules と人が読むビジネスルール文書が残るため）。
  */
-import type { DmCode, IssueInfo } from '../types.js';
+import type { CommentCode } from '../comment/types.js';
+import type { DmCode, IssueInfo, PmCode } from '../types.js';
 
 export type SchemaState =
   /** XSD を見つけて検証し、違反が 0 */
@@ -31,6 +32,10 @@ export type ReferencesState = 'resolved' | 'unresolved' | 'not-run';
 export interface VerificationStatus {
   target: {
     dmCode?: DmCode;
+    /** ルートが pm のとき（dmCode は付かない） */
+    pmCode?: PmCode;
+    /** ルートが comment のとき（dmCode は付かない） */
+    commentCode?: CommentCode;
     issueInfo?: IssueInfo;
     /** スキーマ名（descript / proced など） */
     schemaName?: string;

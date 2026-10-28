@@ -34,6 +34,11 @@ S1000D® の CSDB オブジェクト（データモジュールなど）を読�
 | 1 件のデータモジュールの検証（整形式・XSD・BREX・参照）をまとめ、検証状態 `VerificationStatus` を返す | `verifyDataModule` |
 | 配布物の場所（`specDir`）と CSDB の場所（`csdbDirs`）を、環境変数か設定ファイルから決める | `resolveStackConfig` / `stackConfigPath` / `specDirHowTo` |
 | 検証結果（XSD・BREX・参照）と適用性の判定不能から、修正の候補を決定論的に決める | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
+| 下書き（`DraftDataModule`）からデータモジュールを組み立て、DMC・ICN・PMC を採番する | `buildDataModule` / `buildContent` / `allocateDmc` / `allocateIcn` / `allocatePmc` |
+| 修正候補を文書に適用する（候補と一致する選択だけ） | `applyFix` / `applyFixes` |
+| 書き込める CSDB の置き場所 | `WritableCsdbSource` / `isWritableCsdbSource` |
+| コメントデータモジュールの組み立て | `buildComment` |
+| 翻訳向けの文の取り出しと差し戻し | `extractSegments` / `applySegments` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -147,7 +152,7 @@ const fixes = suggestFixes(result, {
 for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.candidates.map((c) => c.value));
 ```
 
-XSD の定義は `result.schema.xsdPath` から読みます（`xsd: false` で読まずに済ませられます）。修正を文書に当てる処理（`apply_fix`）は持っていません。段階 3 の s1000d-writer-mcp が受け持ちます。
+XSD の定義は `result.schema.xsdPath` から読みます（`xsd: false` で読まずに済ませられます）。修正を文書に当てる処理は `applyFix` です（下の「データモジュールを書く」）。
 
 ## CSDB の置き場所を差し替える（CsdbSource）
 
@@ -173,7 +178,56 @@ const resolver = createBrexResolver(csdb);       // BREX もこの CSDB から�
 await verifyDataModule(xml, { references: { csdb } });  // CsdbIndex・CsdbSource・フォルダーの一覧のどれでもよい
 ```
 
-`CsdbObject.path` は置き場所の中での識別子で、フォルダーならファイルのパス、`MemoryCsdbSource` なら `path` に与えた文字列（省くとファイル名）です。応答にはそのまま載ります。書き戻しは段階 3（writer）で足します。
+`CsdbObject.path` は置き場所の中での識別子で、フォルダーならファイルのパス、`MemoryCsdbSource` なら `path` に与えた文字列（省くとファイル名）です。応答にはそのまま載ります。書き込みは `WritableCsdbSource`（下の「データモジュールを書く」）で足しました。
+
+## データモジュールを書く
+
+0.8.0 で、データモジュールを書く側の処理を足しました。`s1000d-writer-mcp` がこれを呼びます。既存の API は変えていません。LLM に XML を書かせないために、入力は構造化した下書きに限り、XML はこのライブラリが組み立てます。
+
+```ts
+import { CsdbIndex, applyFixes, buildDataModule, suggestFixes, verifyDataModule } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+
+// 下書きと採番の規則から XML を組み立てる（LLM は XML を書かない）
+const built = buildDataModule(draft, allocation, { index: csdb, specDirs: [process.env.S1000D_SPEC_DIR!] });
+console.log(built.fileName, built.dmCode, built.ledger, built.icnNext);
+
+// 検証し、候補が 1 つに決まる修正（exact）だけを適用する
+const result = await verifyDataModule(built.xml, { schema: { validator, schemaDirs }, brex: { resolver }, references: { csdb } });
+const fixes = suggestFixes(result, { xml: built.xml, csdb });
+const exact = fixes.filter((f) => f.confidence === 'exact').map((fix) => ({ fix, candidate: fix.candidates[0]! }));
+const applied = applyFixes(built.xml, exact, { offered: fixes });
+console.log(applied.appliedCount, applied.results.filter((r) => !r.applied).map((r) => r.reason));
+```
+
+### 下書き（`DraftDataModule`）
+
+`buildDataModule(draft, allocation, options)` は、`DraftDataModule` から識別・状態部と内容部の XML を組み立てます。種類は descript / proced / process / fault / pm の 5 つで、内容部は `buildContent` が組み立てます。下書きの本文 `DraftNode` は、`readContent` が返す `ContentNode` と同じ語彙の部分集合です。読んだ木をそのまま書き戻せることを、往復のテストで固定しています。
+
+XSD 検証の前に入力の形を検査し、誤りは `DraftInputError` で返します。この検査は XSD 検証の代わりではありません。proced と fault で必須の前提・事後条件のうち入力に無い項目は、「なし」を表す要素で埋めます。`qualityAssurance` は検証していないことを表す `unverified` にします。補った内容は結果の `notes` に書きます。入力の JSON Schema は `@shuji-bonji/s1000d-core/schema/draft.schema.json` で配布しており、MCP のツールの入力スキーマにそのまま使えます。
+
+### 採番（`Allocation`）
+
+`allocateDmc` / `allocateIcn` / `allocatePmc` が、`Allocation`（モデル識別コード・SNS・種類ごとの情報コード `rules.infoCodeByKind`・CAGE コード）と台帳 `ledger` から番号を決めます。同じ `sourceId` には同じ DMC を返します。台帳は入力で受け取って返すので、ライブラリは状態を持ちません。
+
+情報コードの既定はありません。`infoCodeByKind` は必須で、省略は入力の誤りです。情報コードの意味はプロジェクトが決めるもので、このライブラリは値を決めないからです。
+
+### 修正の適用（`applyFix`）
+
+`applyFix` / `applyFixes` は、`suggestFixes` が返した候補（`replace` / `remove` / `add` / `retarget`）を DOM で文書に適用します。`verify` か `offered` を渡すと、候補を計算し直して場所と候補が一致するか照合し、一致しない選択は `candidate-not-offered` で適用しません。`range` と `pattern` の候補は、値が範囲や正規表現に合うかを `matchesRange` / `matchesPattern` で確かめます。`add` で要素を足す位置は、XSD の子要素の順序（`XsdIndex`）から決めます。XML 宣言と DOCTYPE（ICN の `ENTITY` / `NOTATION` 宣言）は保ちます。開始タグの中の空白だけは 1 つに揃います。
+
+### 書き込める置き場所（`WritableCsdbSource`）
+
+`CsdbSource` を広げたインターフェースで、`writeText` と `writeBytes`（ICN の原本など文字列でないファイル）を持ちます。`DirectoryCsdbSource`（最初のフォルダーに書く）と `MemoryCsdbSource` が実装しています。同じ名前のファイルがあるときは `CsdbWriteConflictError` を投げ、`overwrite` を渡したときだけ上書きします。`CsdbSource` と同じく同期で、非同期にしか書けない製品は、組み立てた XML を受け取って自分で書きます。
+
+### コメントデータモジュール（`buildComment`）
+
+`buildComment` は、`comment.xsd` の構造に沿ってコメントデータモジュールを組み立てます。`commentType`・`commentPriorityCode`・`responseType`・`issueType` は列挙のまま書き、意味は付けません。`seqNumber` を省くと、CSDB の同じモデル・送り手・年の次の番号になります。検証では、BREX の連鎖をパブリケーションモジュールとコメントでもたどるようになりました（`readBrexDmRefOf`）。
+
+### 翻訳向けの文（`extractSegments` / `applySegments`）
+
+`extractSegments` は、人が読む文（題名・段落・手順・警告・表のセル・図の題）だけを `Segment[]` として返します。インライン要素は `{1}` `{2}` の記号にし、`skeletonHash` も返します。`applySegments` は、`skeletonHash` で骨組みが同じことを確かめてから訳文を戻し、`language` だけ違うデータモジュールを返します。骨組みが違えば `SkeletonMismatchError` で止まります。翻訳そのものは行いません。
 
 ## DML・DDN と CSDB の照合
 

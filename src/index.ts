@@ -19,10 +19,14 @@ export {
 export { formatIcn, parseIcn, parseIcnFileName } from './icn.js';
 export { parseSchemaLocation, type SchemaLocationInfo } from './schema-location.js';
 export {
+  readBrexDmRefOf,
+  readCommentCodeElement,
   readDataModuleInfo,
   readDmCodeElement,
   readDmRef,
   readIdentAndStatus,
+  readNonDmIdent,
+  readPmCodeElement,
 } from './data-module.js';
 export * from './xml/index.js';
 export * from './xml/schema-validator.js';
@@ -38,20 +42,27 @@ export {
 export { formatPmc, parsePmc, parsePmcFileName, samePmc } from './pmc.js';
 export { CsdbIndex } from './csdb-index.js';
 export {
+  CsdbWriteConflictError,
   DirectoryCsdbSource,
   MemoryCsdbSource,
   classifyCsdbFileName,
+  isWritableCsdbSource,
   listCsdbObjects,
   type CsdbObject,
   type CsdbObjectKind,
   type CsdbSource,
+  type CsdbWriteOptions,
   type MemoryCsdbEntry,
+  type WritableCsdbSource,
 } from './csdb-source.js';
 export * from './refs/index.js';
 export * from './applic/index.js';
 export * from './content/index.js';
 export * from './fix/index.js';
+export * from './segments/index.js';
+export * from './write/index.js';
 export * from './dml/index.js';
+export * from './comment/index.js';
 export {
   CONFIG_PATH_ENV,
   CSDB_DIR_ENV,

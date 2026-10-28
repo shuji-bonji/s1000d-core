@@ -4,7 +4,8 @@
  * 根拠: S1000D Issue 7 Chap 4.10.2（BREX data module）、4.10.2.1〜4.10.2.4、4.10.3、7.9。
  * 要素名・属性名は仕様書の名前に合わせる。
  */
-import type { DmCode, DmRef, IssueInfo } from '../types.js';
+import type { CommentCode } from '../comment/types.js';
+import type { DmCode, DmRef, IssueInfo, PmCode } from '../types.js';
 
 /** `objectPath/@allowedObjectFlag`: 0 = 使ってはならない、1 = 必ず含める、2 = 任意 */
 export type AllowedObjectFlag = '0' | '1' | '2';
@@ -154,7 +155,15 @@ export interface BrexLayerReport {
 
 /** 連鎖全体に対する照合結果 */
 export interface BrexCheckReport {
-  target: { dmCode?: DmCode; schemaLocation?: string; schemaName?: string };
+  target: {
+    dmCode?: DmCode;
+    /** ルートが pm のとき */
+    pmCode?: PmCode;
+    /** ルートが comment のとき */
+    commentCode?: CommentCode;
+    schemaLocation?: string;
+    schemaName?: string;
+  };
   layers: BrexLayerReport[];
   /** 連鎖の中で見つからなかった BREX */
   unresolved: DmRef[];

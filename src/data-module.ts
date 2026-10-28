@@ -5,6 +5,7 @@
  * 対象はデータモジュール（ルート `dmodule`）。パブリケーションモジュールなど他の CSDB オブジェクトは
  * `readDataModuleInfo` で種類だけ分かり、`identAndStatus` は undefined になる。
  */
+import type { CommentCode, CommentType } from './comment/types.js';
 import { parseSchemaLocation } from './schema-location.js';
 import type {
   DataModuleInfo,
@@ -14,6 +15,7 @@ import type {
   IssueInfo,
   Language,
   ParseResult,
+  PmCode,
 } from './types.js';
 import { defaultXmlEngine } from './xml/xmldom-fontoxpath.js';
 import type { Document, Element, Node, XmlEngine } from './xml/engine.js';
@@ -157,6 +159,92 @@ export function readIdentAndStatus(
     if (qa) value.qualityAssurance = qa.nodeName;
   }
   return { ok: true, value };
+}
+
+/** ルート要素ごとの状態部（`brexDmRef` を持つ要素）への経路。探す順に並べる。 */
+const STATUS_PATHS = [
+  'identAndStatusSection/dmStatus', // dmodule
+  'identAndStatusSection/pmStatus', // pm
+  'identAndStatusSection/commentStatus', // comment
+] as const;
+
+/**
+ * ルートが `dmodule` / `pm` / `comment` のどれでも、状態部（`dmStatus` / `pmStatus` / `commentStatus`）の
+ * `brexDmRef/dmRef` を読む。BREX の連鎖をたどる最初の参照になる。
+ * 参照が無い、または読めないときは undefined。
+ */
+export function readBrexDmRefOf(
+  document: Document,
+  engine: XmlEngine = defaultXmlEngine,
+): DmRef | undefined {
+  const root = document.documentElement;
+  if (!root) return undefined;
+  for (const path of STATUS_PATHS) {
+    const ref = firstElement(engine, `${path}/brexDmRef/dmRef`, root);
+    if (!ref) continue;
+    const r = readDmRef(ref, engine);
+    return r.ok ? r.value : undefined;
+  }
+  return undefined;
+}
+
+/** `pmCode` 要素の属性から PmCode を組み立てる。属性が欠けていれば undefined。 */
+export function readPmCodeElement(el: Element): PmCode | undefined {
+  const modelIdentCode = attr(el, 'modelIdentCode');
+  const pmIssuer = attr(el, 'pmIssuer');
+  const pmNumber = attr(el, 'pmNumber');
+  const pmVolume = attr(el, 'pmVolume');
+  return modelIdentCode && pmIssuer && pmNumber && pmVolume
+    ? { modelIdentCode, pmIssuer, pmNumber, pmVolume }
+    : undefined;
+}
+
+/** `commentCode` 要素の属性から CommentCode を組み立てる。属性が欠けていれば undefined。 */
+export function readCommentCodeElement(el: Element): CommentCode | undefined {
+  const modelIdentCode = attr(el, 'modelIdentCode');
+  const senderIdent = attr(el, 'senderIdent');
+  const yearOfDataIssue = attr(el, 'yearOfDataIssue');
+  const seqNumber = attr(el, 'seqNumber');
+  const commentType = attr(el, 'commentType');
+  return modelIdentCode && senderIdent && yearOfDataIssue && seqNumber && commentType
+    ? {
+        modelIdentCode,
+        senderIdent,
+        yearOfDataIssue,
+        seqNumber,
+        commentType: commentType as CommentType,
+      }
+    : undefined;
+}
+
+/**
+ * ルートが `pm` / `comment` の文書の識別コードを読む（`dmodule` では空）。
+ * `readIdentAndStatus` は `dmodule` 専用なので、PM・comment の対象情報（報告用）はこちらで補う。
+ */
+export function readNonDmIdent(
+  document: Document,
+  engine: XmlEngine = defaultXmlEngine,
+): { pmCode?: PmCode; issueInfo?: IssueInfo; commentCode?: CommentCode } {
+  const root = document.documentElement;
+  if (!root) return {};
+  if (root.nodeName === 'pm') {
+    const codeEl = firstElement(engine, 'identAndStatusSection/pmAddress/pmIdent/pmCode', root);
+    const issueInfo = readIssueInfo(
+      firstElement(engine, 'identAndStatusSection/pmAddress/pmIdent/issueInfo', root),
+    );
+    const pmCode = codeEl && readPmCodeElement(codeEl);
+    return { ...(pmCode ? { pmCode } : {}), ...(issueInfo ? { issueInfo } : {}) };
+  }
+  if (root.nodeName === 'comment') {
+    const codeEl = firstElement(
+      engine,
+      'identAndStatusSection/commentAddress/commentIdent/commentCode',
+      root,
+    );
+    const commentCode = codeEl && readCommentCodeElement(codeEl);
+    return commentCode ? { commentCode } : {};
+  }
+  return {};
 }
 
 /**

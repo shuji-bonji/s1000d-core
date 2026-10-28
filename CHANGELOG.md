@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 (2026-10-28)
+
+段階 3（writer）のための「書く側」の機能です（docs/design/writer-mcp.md、D-27）。既存の API は変えていません。
+
+### 追加
+
+- データモジュールの組み立て（`src/write/`）。`buildDataModule(draft, allocation, options)` が、構造化された入力 `DraftDataModule`（識別情報と、reader の `ContentNode` と同じ語彙の `DraftNode` の木）から識別・状態部と内容部の XML を組み立てます。種類は descript / proced / process / fault / pm の 5 つ（`buildContent`）。`DraftInputError` は XML を組み立てる前の入力の形の検査で、XSD 検証の代わりではありません。proced / fault で必須の前提・事後条件（`preliminaryRqmts` / `closeRqmts`）は、入力に無い項目を `noConds` などで埋め、`qualityAssurance` は `unverified` にします。
+- 採番（`src/write/allocate.ts`）。`allocateDmc` / `allocateIcn` / `allocatePmc` が `Allocation`（モデル識別コード・SNS・種類ごとの情報コード `infoCodeByKind`・CAGE）と台帳 `ledger` から番号を決めます。同じ `sourceId` には同じ DMC を返し、台帳は入力で受け取って返します（状態を持たない）。情報コードの既定はありません（D-27）。
+- 入力の JSON Schema `schema/draft.schema.json`（`@shuji-bonji/s1000d-core/schema/draft.schema.json`）。型と `required` が一致することをテストで固定しています。
+- 修正候補の適用（`src/fix/apply.ts`）。`applyFix` / `applyFixes` が `suggestFixes` の候補（`replace` / `remove` / `add` / `retarget`）を DOM で適用します。`verify` か `offered` で候補を計算し直して照合し、候補に無い選択は `candidate-not-offered` で適用しません（D-19）。`range` / `pattern` の値は `matchesRange` / `matchesPattern` で確かめます。`add` の位置は `XsdIndex` の子要素の順序で決めます。XML 宣言と DOCTYPE（ICN の `ENTITY` / `NOTATION` 宣言）は保ちます（開始タグの中の空白は 1 つに揃います）。
+- 書き込める置き場所 `WritableCsdbSource`（`writeText` / `writeBytes`、`isWritableCsdbSource`、`CsdbWriteConflictError`）。`DirectoryCsdbSource`（最初のフォルダーに書く）と `MemoryCsdbSource` に実装しました。同期のままです。
+- comment データモジュールの組み立て（`src/comment/`）。`buildComment` が `comment.xsd` の構造（`commentCode` の必須属性 5 つ、`commentAddressItems`、`commentStatus`、`commentContent/simplePara`）に沿って組み立てます。`commentType` / `commentPriorityCode` / `responseType` / `issueType` は列挙のまま解釈しません。`seqNumber` 省略時は CSDB の同じモデル・送り手・年の次の番号です。ファイル名 `COM-<MIC>-<送り手>-<年>-<連番>-<種類>_<言語>-<国>.XML` は配布物の見本 1 件からの推定で、`classifyCsdbFileName` が `comment` として拾います（`CsdbObjectKind` に `comment`）。
+- 翻訳向けの文の抜き出しと差し戻し（`src/segments/`）。`extractSegments` が人の読む文（題名・段落・手順・警告・表のセル・図の題名）だけを `Segment[]`（`id`・`xpath`・`context`・`text`・`placeholders`）として返し、インライン要素は `{n}` のプレースホルダーにします。`applySegments` は `skeletonHash` で骨組みが同じことを確かめてから訳文を差し戻し、`language` だけ違う DM を返します（`SkeletonMismatchError`）。Bike Samples 106 件で往復しても元と同じ（空白を除く）で、XSD に適合したままです。
+- BREX の連鎖を PM と comment でもたどるようにしました。`readBrexDmRefOf` が `dmStatus` / `pmStatus` / `commentStatus` の `brexDmRef` を読み、`checkAgainstBrexChain` と `verifyDataModule` がそれを使います。`VerificationStatus.target` と `BrexCheckReport.target` に任意の `pmCode` / `commentCode` を足しました。
+- `readNonDmIdent` / `readPmCodeElement` / `readCommentCodeElement`、`src/xml/serialize.ts`（宣言と DOCTYPE を保つ直列化）。
+- 自作の券売機の入力データ `src/__fixtures__/kenbaiki-drafts.ts`（U-03 の出発点）。
+
 ## 0.7.0 (2026-10-28)
 
 ### 追加

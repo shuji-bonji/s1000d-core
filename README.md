@@ -34,6 +34,11 @@ A shared library for reading S1000D® CSDB objects (data modules and others) and
 | Validate one data module (well-formedness, XSD, BREX, references) in one call and return the verification status `VerificationStatus` | `verifyDataModule` |
 | Decide the distribution folder (`specDir`) and the CSDB folders (`csdbDirs`) from environment variables or a config file | `resolveStackConfig` / `stackConfigPath` / `specDirHowTo` |
 | Decide fix candidates deterministically from the verification result (XSD, BREX, references) and from undetermined applicability | `suggestFixes` / `findUndeterminedApplicability` / `findApplicTables` |
+| Build a data module from a draft (`DraftDataModule`) and number DMCs, ICNs and PMCs | `buildDataModule` / `buildContent` / `allocateDmc` / `allocateIcn` / `allocatePmc` |
+| Apply fix candidates to a document (only a selection that matches a candidate) | `applyFix` / `applyFixes` |
+| A CSDB place that can be written to | `WritableCsdbSource` / `isWritableCsdbSource` |
+| Build a comment data module | `buildComment` |
+| Take out sentences for translation and put them back | `extractSegments` / `applySegments` |
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -147,7 +152,7 @@ const fixes = suggestFixes(result, {
 for (const f of fixes) console.log(f.kind, f.location?.path, f.confidence, f.candidates.map((c) => c.value));
 ```
 
-The XSD definitions are read from `result.schema.xsdPath` (pass `xsd: false` to skip this). Applying a fix to the document (`apply_fix`) is not part of this library; s1000d-writer-mcp will do it in stage 3.
+The XSD definitions are read from `result.schema.xsdPath` (pass `xsd: false` to skip this). Applying a fix to a document is `applyFix` (see "Writing data modules" below).
 
 ## Swapping where the CSDB lives (CsdbSource)
 
@@ -173,7 +178,56 @@ const resolver = createBrexResolver(csdb);       // BREX is read from this CSDB 
 await verifyDataModule(xml, { references: { csdb } });  // accepts a CsdbIndex, a CsdbSource or a list of folders
 ```
 
-`CsdbObject.path` is the identifier inside the store: the file path for a folder, and for `MemoryCsdbSource` the string given as `path` (the file name if omitted). It is returned in responses as is. Writing back will be added in stage 3 (writer).
+`CsdbObject.path` is the identifier inside the store: the file path for a folder, and for `MemoryCsdbSource` the string given as `path` (the file name if omitted). It is returned in responses as is. Writing was added with `WritableCsdbSource` (see "Writing data modules" below).
+
+## Writing data modules
+
+Version 0.8.0 added the processing that writes data modules. `s1000d-writer-mcp` calls it. Existing APIs are unchanged. So that an LLM does not have to write XML, the input is limited to a structured draft, and this library builds the XML.
+
+```ts
+import { CsdbIndex, applyFixes, buildDataModule, suggestFixes, verifyDataModule } from '@shuji-bonji/s1000d-core';
+
+const csdb = CsdbIndex.fromDirs(['./csdb']);
+
+// Build the XML from a draft and the numbering rules (the LLM does not write XML)
+const built = buildDataModule(draft, allocation, { index: csdb, specDirs: [process.env.S1000D_SPEC_DIR!] });
+console.log(built.fileName, built.dmCode, built.ledger, built.icnNext);
+
+// Verify, and apply only the fixes that have exactly one candidate (exact)
+const result = await verifyDataModule(built.xml, { schema: { validator, schemaDirs }, brex: { resolver }, references: { csdb } });
+const fixes = suggestFixes(result, { xml: built.xml, csdb });
+const exact = fixes.filter((f) => f.confidence === 'exact').map((fix) => ({ fix, candidate: fix.candidates[0]! }));
+const applied = applyFixes(built.xml, exact, { offered: fixes });
+console.log(applied.appliedCount, applied.results.filter((r) => !r.applied).map((r) => r.reason));
+```
+
+### The draft (`DraftDataModule`)
+
+`buildDataModule(draft, allocation, options)` builds the XML of the identification and status section and the content section from a `DraftDataModule`. There are 5 kinds (descript / proced / process / fault / pm), and `buildContent` builds the content section. The body of a draft, `DraftNode`, is a subset of the same vocabulary as the `ContentNode` that `readContent` returns. A round-trip test fixes the property that a tree that was read can be written back as it is.
+
+The shape of the input is checked before XSD validation, and a mistake is returned as `DraftInputError`. This check does not replace XSD validation. In proced and fault, the required preconditions and postconditions that the input does not give are filled with elements that mean "none". `qualityAssurance` is set to `unverified`, which states that nothing has been verified. What was filled in is written to `notes` of the result. The JSON Schema of the input is distributed as `@shuji-bonji/s1000d-core/schema/draft.schema.json` and can be used as is for the input schema of an MCP tool.
+
+### Numbering (`Allocation`)
+
+`allocateDmc` / `allocateIcn` / `allocatePmc` decide numbers from an `Allocation` (the model identification code, the SNS, the information code for each kind in `rules.infoCodeByKind`, and the CAGE code) and the ledger `ledger`. The same `sourceId` gets the same DMC. The ledger comes in with the input and goes out in the result, so the library keeps no state.
+
+There is no default information code. `infoCodeByKind` is required, and omitting it is a mistake in the input. The meaning of an information code is the project's decision, and this library does not decide the value.
+
+### Applying fixes (`applyFix`)
+
+`applyFix` / `applyFixes` apply the candidates returned by `suggestFixes` (`replace` / `remove` / `add` / `retarget`) to a document through the DOM. When `verify` or `offered` is passed, they compute the candidates again and check that the location and the candidate match, and a selection that does not match is not applied (`candidate-not-offered`). For `range` and `pattern` candidates, `matchesRange` / `matchesPattern` check that the value fits the range or the regular expression. The position of an element added by `add` is decided from the order of child elements in the XSD (`XsdIndex`). The XML declaration and the DOCTYPE (the `ENTITY` / `NOTATION` declarations of ICNs) are kept. Only the whitespace inside a start tag is normalised to a single space.
+
+### A place that can be written to (`WritableCsdbSource`)
+
+This is an interface that extends `CsdbSource` with `writeText` and `writeBytes` (for files that are not text, such as the original files of ICNs). `DirectoryCsdbSource` (which writes into the first folder) and `MemoryCsdbSource` implement it. When a file of the same name exists, it throws `CsdbWriteConflictError`, and it overwrites only when `overwrite` is passed. Like `CsdbSource` it is synchronous, and a product that can only write asynchronously receives the built XML and writes it itself.
+
+### Comment data modules (`buildComment`)
+
+`buildComment` builds a comment data module that follows the structure of `comment.xsd`. `commentType`, `commentPriorityCode`, `responseType` and `issueType` are written as the enumeration given, with no meaning attached. If `seqNumber` is omitted, it is the next number for the same model, sender and year in the CSDB. Verification now follows the BREX chain for publication modules and comments as well (`readBrexDmRefOf`).
+
+### Sentences for translation (`extractSegments` / `applySegments`)
+
+`extractSegments` returns only the sentences that a person reads (titles, paragraphs, steps, warnings, table cells and figure titles) as `Segment[]`. Inline elements become the placeholders `{1}` `{2}`, and `skeletonHash` is returned too. `applySegments` checks with `skeletonHash` that the skeleton is the same, puts the translated sentences back, and returns a data module that differs only in `language`. If the skeleton differs, it stops with `SkeletonMismatchError`. It does not translate.
 
 ## Reconciling a DML and a DDN with the CSDB
 

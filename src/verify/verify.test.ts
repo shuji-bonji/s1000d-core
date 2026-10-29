@@ -147,6 +147,33 @@ describe('verifyDataModule', () => {
   };
   const fixedNow = () => new Date(2026, 9, 24, 23, 50, 0);
 
+  it('BREX の工程を行っても、brexDmRef が無く層も渡されなければ、passed ではなく not-run と理由', async () => {
+    const noRef = fx('kenbaiki-descript.xml').replace(/<brexDmRef>[\s\S]*?<\/brexDmRef>/, '');
+    expect(noRef).not.toContain('brexDmRef');
+    const r = await verifyDataModule(noRef, { brex: { resolver }, now: fixedNow });
+    expect(r.status.brex.layers).toBe(0);
+    expect(r.status.brex.unresolved).toEqual([]);
+    expect(r.status.brex.state).toBe('not-run');
+    expect(r.status.brex.reason).toBe('no brexDmRef in the document and no BREX layer was given');
+    // 層を渡せば照合したことになる（brexDmRef が無くても）
+    const layer = readBrex(fx('kenbaiki-brex.xml'));
+    if (!layer.ok) throw new Error('fixture');
+    const withLayer = await verifyDataModule(noRef, {
+      brex: { resolver, extraLayers: [layer.value] },
+      now: fixedNow,
+    });
+    expect(withLayer.status.brex.layers).toBe(1);
+    expect(withLayer.status.brex.state).not.toBe('not-run');
+    expect(withLayer.status.brex.reason).toBeUndefined();
+  });
+  it('brexDmRef があるのに BREX が見つからないときは、これまでどおり incomplete', async () => {
+    const r = await verifyDataModule(fx('kenbaiki-descript.xml'), {
+      brex: { resolver: () => undefined },
+      now: fixedNow,
+    });
+    expect(r.status.brex.layers).toBe(0);
+    expect(r.status.brex.state).toBe('incomplete');
+  });
   it('XSD が無いと schema-not-found、BREX は照合できる', async () => {
     const r = await verifyDataModule(fx('kenbaiki-descript.xml'), {
       schema: { validator, schemaDirs: [] },

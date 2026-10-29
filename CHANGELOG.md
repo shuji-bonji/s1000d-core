@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2 (2026-10-29)
+
+hub の E2E テストで見つかった 2 点を直しました。既存の API は変えていません（関数を 1 つ足しただけです）。
+
+### 追加
+
+- `fingerprintDirs(dirs)`（`src/csdb-source.ts`）。フォルダー群の「指紋」を返します。`listCsdbObjects` と同じ範囲（再帰、`node_modules` と `.` で始まるフォルダーは除く、CSDB のファイル名のものだけ）を `readdirSync` と `statSync` だけでたどり、相対パス・大きさ・更新時刻（`mtimeMs`）から SHA-256 を作ります。ファイルの中身は読みません。動き続ける MCP サーバーが、索引を作ったときと今とでフォルダーの中身が変わったか（起動後に増えたファイルがあるか）を確かめて、索引を作り直すのに使います。
+
+### 修正
+
+- `verifyDataModule` は、BREX の工程を行っても照合した層が 0 件で、見つからなかった BREX も無いとき（`brexDmRef` が無く、`extraLayers` も無い）に `brex.state: "passed"` を返していました。何にも照合していないので、`not-run` と `reason`（"no brexDmRef in the document and no BREX layer was given"）にします。`brexDmRef` があるのに見つからないときは、これまでどおり `incomplete` です。`BrexState` の `not-run` の意味は「工程を省いた、または照合した層が 0 件」に広がります。
+
 ## 0.8.1 (2026-10-28)
 
 BREX の工程と参照の工程の食い違いを直しました。既存の API は変えていません（型に任意の項目を足しただけです）。

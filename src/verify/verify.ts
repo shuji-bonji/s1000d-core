@@ -190,9 +190,13 @@ export async function verifyDataModule(
     const violationCount = brexReport.layers.reduce((n, l) => n + l.violations.length, 0);
     const skippedRules = brexReport.layers.reduce((n, l) => n + l.skipped.length, 0);
     const manualChecks = brexReport.layers.reduce((n, l) => n + l.manualChecks.length, 0);
+    // 照合した層が 0 で、見つからなかった BREX も無いとき（brexDmRef が無く、extraLayers も無い）は、
+    // 何にも照合していないので passed とは言わず、not-run にする（brexDmRef があって見つからないときは incomplete）
+    const noLayerChecked = brexReport.layers.length === 0 && brexReport.unresolved.length === 0;
     status.brex = {
-      state:
-        violationCount > 0
+      state: noLayerChecked
+        ? 'not-run'
+        : violationCount > 0
           ? 'violations'
           : brexReport.unresolved.length > 0 || skippedRules > 0
             ? 'incomplete'
@@ -202,6 +206,9 @@ export async function verifyDataModule(
       unresolved: brexReport.unresolved.map((u) => formatDmc(u.dmCode)),
       manualChecks,
       skippedRules,
+      ...(noLayerChecked
+        ? { reason: 'no brexDmRef in the document and no BREX layer was given' }
+        : {}),
     };
   } else {
     status.brex.reason = 'skipped';

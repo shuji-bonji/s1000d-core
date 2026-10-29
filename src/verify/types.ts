@@ -25,6 +25,7 @@ export type BrexState =
   | 'violations'
   /** 違反は 0 だが、未解決の BREX か評価できなかったルールがある */
   | 'incomplete'
+  /** BREX の工程を省いた、または照合した層が 0 件（brexDmRef が無く、層も渡されていない）。`reason` に理由 */
   | 'not-run';
 
 export type ReferencesState = 'resolved' | 'unresolved' | 'not-run';

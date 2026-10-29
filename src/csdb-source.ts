@@ -10,6 +10,7 @@
  * ここを非同期にするとそれらの API を変えることになる。データベースや API から読む実装は、
  * 先に読み込んでから `MemoryCsdbSource` に渡すか、同期で読める形（キャッシュなど）にして差し込む。
  */
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseDmcFileName } from './dmc.js';
@@ -153,6 +154,50 @@ export function listCsdbObjects(dirs: string[]): CsdbObject[] {
     }
   }
   return out;
+}
+
+/**
+ * フォルダー群の「指紋」。`listCsdbObjects` と同じ範囲（再帰、`node_modules` と `.` で始まるフォルダーは除く、
+ * CSDB のファイル名のものだけ）をたどり、相対パス・大きさ・更新時刻（mtimeMs）の一覧から SHA-256 を作る。
+ * `readdirSync` と `statSync` だけを使い、ファイルの中身は読まない。
+ * 動き続けるプロセスが、索引を作ったときと今とでフォルダーの中身が変わったかを安く確かめるのに使う
+ * （D-10・D-17: 索引の鮮度の確認は verify と reader で同じ関数を使う）。
+ * フォルダーの順序と重複は結果に影響しない。存在しないフォルダーは空として扱う。
+ */
+export function fingerprintDirs(dirs: string[]): string {
+  const lines: string[] = [];
+  const walk = (root: string, dir: string) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+        walk(root, p);
+        continue;
+      }
+      if (!classifyCsdbFileName(e.name)) continue;
+      try {
+        const st = statSync(p);
+        lines.push(`${root}\0${relative(root, p)}\0${st.size}\0${st.mtimeMs}`);
+      } catch {
+        // 消えたファイルは無視する
+      }
+    }
+  };
+  for (const d of [...new Set(dirs)]) {
+    try {
+      if (statSync(d).isDirectory()) walk(d, d);
+    } catch {
+      // 無いフォルダーは無視する
+    }
+  }
+  lines.sort();
+  return createHash('sha256').update(lines.join('\n')).digest('hex');
 }
 
 /** 既定の実装。フォルダー群（再帰）を CSDB と見なし、`path` はファイルのパス。書き込みは最初のフォルダーに行う */

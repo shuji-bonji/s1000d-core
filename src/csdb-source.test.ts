@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +18,9 @@ import {
   DirectoryCsdbSource,
   MemoryCsdbSource,
   classifyCsdbFileName,
+  fingerprintDirs,
   isWritableCsdbSource,
+  listCsdbObjects,
   type CsdbSource,
   type WritableCsdbSource,
 } from './csdb-source.js';
@@ -249,5 +259,46 @@ describe('DirectoryCsdbSource の書き込み先', () => {
     expect(() => source.writeText('../outside.xml', 'x')).toThrow(/outside/);
     expect(() => source.writeText(join(tmpdir(), 'abs.xml'), 'x')).toThrow(/outside/);
     expect(() => new DirectoryCsdbSource([]).writeText('a.xml', 'x')).toThrow(/no directory/);
+  });
+});
+
+describe('fingerprintDirs', () => {
+  it('ファイルの追加・大きさ・更新時刻の変化で変わり、対象外のファイルと順序では変わらない', () => {
+    const a = mkdtempSync(join(tmpdir(), 's1000d-core-fp-a-'));
+    const b = mkdtempSync(join(tmpdir(), 's1000d-core-fp-b-'));
+    tmpDirs.push(a, b);
+    const empty = fingerprintDirs([a, b]);
+    expect(fingerprintDirs([b, a, a])).toBe(empty);
+    expect(fingerprintDirs([join(a, 'missing')])).toBe(fingerprintDirs([]));
+
+    const dm = join(a, 'sub', DESCRIPT);
+    mkdirSync(join(a, 'sub'));
+    writeFileSync(dm, 'one');
+    const one = fingerprintDirs([a, b]);
+    expect(one).not.toBe(empty);
+    expect(fingerprintDirs([b, a])).toBe(one);
+
+    // 大きさが変わる
+    writeFileSync(dm, 'three');
+    const sized = fingerprintDirs([a, b]);
+    expect(sized).not.toBe(one);
+    // 大きさが同じでも更新時刻が違えば変わる
+    utimesSync(dm, new Date(2020, 0, 1), new Date(2020, 0, 1));
+    const timed = fingerprintDirs([a, b]);
+    expect(timed).not.toBe(sized);
+    // 2 つ目のフォルダーに増えても変わる
+    writeFileSync(join(b, BREX), 'x');
+    expect(fingerprintDirs([a, b])).not.toBe(timed);
+
+    // CSDB の形でないファイル、node_modules、. で始まるフォルダーは索引と同じく見ない
+    const before = fingerprintDirs([a, b]);
+    writeFileSync(join(a, 'README.md'), 'x');
+    mkdirSync(join(a, 'node_modules'));
+    writeFileSync(join(a, 'node_modules', DESCRIPT.replace('_001', '_002')), 'x');
+    mkdirSync(join(a, '.hidden'));
+    writeFileSync(join(a, '.hidden', BREX.replace('_001', '_002')), 'x');
+    expect(fingerprintDirs([a, b])).toBe(before);
+    // 索引が見るものと同じ範囲
+    expect(listCsdbObjects([a, b])).toHaveLength(2);
   });
 });

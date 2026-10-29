@@ -46,6 +46,7 @@ export {
   DirectoryCsdbSource,
   MemoryCsdbSource,
   classifyCsdbFileName,
+  fingerprintDirs,
   isWritableCsdbSource,
   listCsdbObjects,
   type CsdbObject,

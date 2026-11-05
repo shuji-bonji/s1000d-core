@@ -144,6 +144,51 @@ describe('suggestSchemaFixes', () => {
     ]);
   });
 
+  it('必須の要素が抜けて次の要素で報告されたとき、前に足す候補を作る（applic が抜けて brexDmRef で報告される）', () => {
+    const dmStatusXsd = XsdIndex.fromString(
+      `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+        <xs:element name="dmStatus"><xs:complexType><xs:sequence>
+          <xs:element ref="security"/>
+          <xs:choice><xs:element ref="applicCrossRefTableRef"/><xs:element ref="applic"/><xs:element ref="applicRef"/></xs:choice>
+          <xs:element ref="brexDmRef"/>
+        </xs:sequence></xs:complexType></xs:element>
+        <xs:element name="security"/><xs:element name="applicCrossRefTableRef"/><xs:element name="applic"/>
+        <xs:element name="applicRef"/><xs:element name="brexDmRef"/>
+      </xs:schema>`,
+      'test.xsd',
+    );
+    const [fix] = suggestSchemaFixes(
+      [
+        err(
+          "Element 'brexDmRef': This element is not expected. Expected is one of ( applicCrossRefTableRef, applic, applicRef ).",
+          '/dmStatus/brexDmRef',
+        ),
+      ],
+      { xsd: dmStatusXsd },
+    );
+    expect(
+      fix.candidates.map(
+        (c) => `${c.action}${c.position ? `-${c.position}` : ''}:${c.value ?? c.target}`,
+      ),
+    ).toEqual([
+      'remove:brexDmRef',
+      'add-before:applicCrossRefTableRef',
+      'add-before:applic',
+      'add-before:applicRef',
+      'replace:applicCrossRefTableRef',
+      'replace:applic',
+      'replace:applicRef',
+    ]);
+    expect(fix.confidence).toBe('several');
+    expect(fix.note).toContain('brexDmRef may be correct here');
+    // 親の中で許されない要素なら、前に足しても直らないので候補にしない
+    const [other] = suggestSchemaFixes(
+      [err("Element 'x': This element is not expected. Expected is ( applic ).", '/dmStatus/x')],
+      { xsd: dmStatusXsd },
+    );
+    expect(other.candidates.map((c) => c.action)).toEqual(['remove', 'replace']);
+  });
+
   it('要素の過不足・属性の過不足を候補にする', () => {
     const fixes = suggestSchemaFixes(
       [
@@ -158,7 +203,7 @@ describe('suggestSchemaFixes', () => {
     );
     expect(fixes.map((f) => f.candidates.map((c) => `${c.action}:${c.value ?? c.target}`))).toEqual(
       [
-        ['remove:c', 'replace:b'],
+        ['remove:c', 'add:b', 'replace:b'],
         ['add:x', 'add:y'],
         ['remove:@kinf', 'replace:kind'],
         ['remove:b'],
@@ -166,6 +211,8 @@ describe('suggestSchemaFixes', () => {
         [],
       ],
     );
+    expect(fixes[0].candidates[1]).toMatchObject({ target: 'c', position: 'before' });
+    expect(fixes[0].note).toContain('an element before it may be missing');
     expect(fixes[3].confidence).toBe('several');
     expect(fixes[3].note).toContain('b is allowed in root, but not at this position');
     expect(fixes[2].note).toBe('Attributes allowed on root: kind, code, year');

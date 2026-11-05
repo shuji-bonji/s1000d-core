@@ -37,6 +37,11 @@ export interface FixCandidate {
   valueForm?: ValueForm;
   /** 直す対象（属性名 `@name`、要素名、`issueInfo`、製品の属性 id など）。場所だけで分かるときは省略 */
   target?: string;
+  /**
+   * `add` で要素を足す位置。`before` = 場所（`location.path`）の要素の直前に、兄弟として `value` の要素を足す
+   * （`target` はその場所の要素名）。省略時は、`target` の要素の子として XSD の出現順の位置に足す
+   */
+  position?: 'before';
   /** 人が読む説明（BREX の objectValue の文章、XSD の定義の名前など） */
   description: string;
 }

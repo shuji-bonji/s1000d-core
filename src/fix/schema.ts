@@ -232,6 +232,25 @@ export function suggestSchemaFixes(
           description: 'remove this element (or move it to where the parent allows it)',
         },
       ];
+      // この要素が親の中で許される要素なら、前にある必須の要素が抜けている可能性がある（applic が抜けて brexDmRef で報告されるなど）。
+      // そのときは「前に足す」候補を、置き換える候補より先に置く
+      const parentAllowed = parent && xsd ? xsd.allowedChildren(parent) : undefined;
+      const mayBeMissingBefore =
+        element !== undefined &&
+        expected.length > 0 &&
+        !expected.includes(element) &&
+        (parentAllowed === undefined || parentAllowed.includes(element));
+      if (mayBeMissingBefore) {
+        for (const e of expected) {
+          cands.push({
+            action: 'add',
+            value: e,
+            target: element,
+            position: 'before',
+            description: `add the element "${e}" before this element (a required element before it may be missing)`,
+          });
+        }
+      }
       for (const e of expected) {
         cands.push({
           action: 'replace',
@@ -242,6 +261,10 @@ export function suggestSchemaFixes(
       }
       let note: string | undefined;
       let source = libxml;
+      if (mayBeMissingBefore) {
+        note = `${element} may be correct here and an element before it may be missing: the XSD expects one of ${expected.join(', ')} at this position.${parentAllowed ? ` Allowed children of ${parent}: ${parentAllowed.join(', ')}` : ''}`;
+        if (parentAllowed) source = xsd!.describe('elements', parent!) ?? libxml;
+      }
       if (expected.length === 0 && parent && xsd) {
         const allowed = xsd.allowedChildren(parent);
         if (allowed) {

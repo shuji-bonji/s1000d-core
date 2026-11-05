@@ -125,6 +125,7 @@ function matchOffered(offered: Fix[], fix: Fix, selected: FixCandidate): MatchRe
     for (const c of o.candidates) {
       if (c.action !== selected.action) continue;
       if ((c.target ?? '') !== (selected.target ?? '')) continue;
+      if ((c.position ?? '') !== (selected.position ?? '')) continue;
       if (c.valueForm === 'range' || c.valueForm === 'pattern') {
         const v = selected.value;
         if (v === undefined || c.value === undefined) {
@@ -566,6 +567,26 @@ function applyAdd(ctx: Ctx, c: FixCandidate, path: string | undefined): Outcome 
       return fail('target-mismatch', 'Nothing can be added under an attribute.');
     const tgtAttr = attrTarget(target);
     if (tgtAttr !== undefined) return addAttribute(at.el, tgtAttr, value, path);
+    // 兄弟を前に足す（schema.ts の 'This element is not expected': target は場所の要素、value は足す要素の名前）
+    if (c.position === 'before') {
+      if (!targetMatchesElement(at.el, target))
+        return fail('target-mismatch', `${target} is not the element at ${path}`);
+      if (value === undefined) return fail('value-required');
+      if (!NAME_RE.test(value)) return fail('value-malformed', `"${value}" is not an element name`);
+      const parent = at.el.parentNode;
+      if (!parent || parent.nodeType !== ELEMENT_NODE)
+        return fail('parent-not-found', `${path} has no parent element`);
+      const child = ctx.doc.createElementNS((parent as Element).namespaceURI, value);
+      insertChild(parent as Element, child, at.el);
+      const parentPath = path.replace(/\/[^/]+$/, '');
+      return {
+        ok: true,
+        changed: { xpath: `${parentPath}/${value}`, after: `<${value}>` },
+        notes: [
+          `<${value}> was added empty before <${at.el.nodeName}>; its content may still be required (verify again).`,
+        ],
+      };
+    }
     // 子要素を足す（schema.ts の 'Missing child element(s)': target は親、value は足す子の名前）
     if (target !== undefined && targetMatchesElement(at.el, target) && value !== undefined) {
       if (!NAME_RE.test(value)) return fail('value-malformed', `"${value}" is not an element name`);

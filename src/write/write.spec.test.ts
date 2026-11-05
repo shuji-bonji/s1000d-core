@@ -12,6 +12,7 @@ import { checkAgainstBrexChain, findDefaultBrex } from '../brex/index.js';
 import { createBrexResolver } from '../csdb.js';
 import { CsdbIndex } from '../csdb-index.js';
 import { formatDmc } from '../dmc.js';
+import { applyFix, suggestFixes } from '../fix/index.js';
 import { findSchemaDirs, verifyDataModule } from '../verify/index.js';
 import { Libxml2SchemaValidator } from '../xsd-libxml2.js';
 import { buildDataModule, type BuildResult } from './build.js';
@@ -164,6 +165,42 @@ describe.skipIf(!enabled || !existsSync(specDir))(
         }
       }
       expect(problems).toEqual([]);
+    });
+
+    it('applic が抜けた DM: 修正候補に「brexDmRef の前に applic を足す」があり、適用すると brexDmRef の誤りが消える', async () => {
+      const result = buildDataModule(
+        { ...F.descriptDraft(), applic: undefined },
+        F.kenbaikiAllocation(),
+        {
+          specDirs: [specDir],
+        },
+      );
+      const resolver = createBrexResolver(CsdbIndex.fromDirs([specDir]));
+      const verify = (xml: string) =>
+        verifyDataModule(xml, {
+          path: result.fileName,
+          schema: { validator, schemaDirs },
+          brex: { resolver },
+        });
+      const v = await verify(result.xml);
+      expect(v.status.schema.state).toBe('invalid');
+      const fixes = suggestFixes(v, { xml: result.xml });
+      const fix = fixes.find((f) => f.location?.path?.endsWith('/dmStatus/brexDmRef'));
+      expect(fix, JSON.stringify(fixes)).toBeDefined();
+      const add = fix!.candidates.find(
+        (c) => c.action === 'add' && c.position === 'before' && c.value === 'applic',
+      );
+      expect(add, JSON.stringify(fix!.candidates)).toBeDefined();
+      const applied = applyFix(result.xml, fix!, add!, { verify: v });
+      expect(applied.applied, applied.reason).toBe(true);
+      const again = await verify(applied.xml);
+      // 空の applic を足したので、残る誤りは applic の中身だけ（brexDmRef の位置の誤りは消える）
+      const messages = again.schema.errors.map((e) => e.message);
+      expect(messages.some((m) => m.includes("'brexDmRef'"))).toBe(false);
+      expect(
+        messages.every((m) => m.includes("'applic'")),
+        JSON.stringify(messages),
+      ).toBe(true);
     });
   },
 );

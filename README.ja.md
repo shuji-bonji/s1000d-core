@@ -215,7 +215,7 @@ XSD 検証の前に入力の形を検査し、誤りは `DraftInputError` で返
 
 ### 修正の適用（`applyFix`）
 
-`applyFix` / `applyFixes` は、`suggestFixes` が返した候補（`replace` / `remove` / `add` / `retarget`）を DOM で文書に適用します。`verify` か `offered` を渡すと、候補を計算し直して場所と候補が一致するか照合し、一致しない選択は `candidate-not-offered` で適用しません。`range` と `pattern` の候補は、値が範囲や正規表現に合うかを `matchesRange` / `matchesPattern` で確かめます。`add` で要素を足す位置は、XSD の子要素の順序（`XsdIndex`）から決めます。XML 宣言と DOCTYPE（ICN の `ENTITY` / `NOTATION` 宣言）は保ちます。開始タグの中の空白だけは 1 つに揃います。
+`applyFix` / `applyFixes` は、`suggestFixes` が返した候補（`replace` / `remove` / `add` / `retarget`）を DOM で文書に適用します。`verify` か `offered` を渡すと、候補を計算し直して場所と候補が一致するか照合し、一致しない選択は `candidate-not-offered` で適用しません。`range` と `pattern` の候補は、値が範囲や正規表現に合うかを `matchesRange` / `matchesPattern` で確かめます。`add` で要素を足す位置は、XSD の子要素の順序（`XsdIndex`）から決めます。ただし `position: "before"` の付いた候補は、違反の場所の要素の直前に兄弟として足します（必須の要素が抜け、libxml2 が次の要素の位置で「This element is not expected」と報告したとき。たとえば `applic` が抜けて `brexDmRef` で報告されたときに「`brexDmRef` の前に `applic` を足す」）。XML 宣言と DOCTYPE（ICN の `ENTITY` / `NOTATION` 宣言）は保ちます。開始タグの中の空白だけは 1 つに揃います。
 
 ### 書き込める置き場所（`WritableCsdbSource`）
 

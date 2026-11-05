@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.3 (2026-11-06)
+
+XSD の修正候補の不足を直しました（[#1](https://github.com/shuji-bonji/s1000d-core/issues/1)）。既存の API は変えていません（型に任意の項目を足しただけです）。
+
+### 修正
+
+- 必須の要素が抜けると、libxml2 は次の要素の位置で `This element is not expected. Expected is one of ( … )` と報告します（`dmStatus` の `applic` が抜けると `brexDmRef` で報告される）。この違反から `suggestSchemaFixes` が作る候補は「その要素を取り除く」と「期待された要素に置き換える」だけで、正しい直し方の「前に足す」がありませんでした。
+  - 違反の要素が親の中で許される要素（XSD の `allowedChildren` に入っている。XSD が無いときは判定せずに入っているとみなす）で、期待された要素の並びに入っていないとき、期待された要素ごとに `add` の候補（`target` は違反の要素、`value` は足す要素、`position: "before"`）を、置き換える候補より前に足します。`note` に「この要素の前にある要素が抜けている可能性がある」と、親が許す子要素の並びを書きます。`confidence` は従来どおり `several` です。
+  - `FixCandidate.position`（`'before'`）を足しました。`applyFix` / `applyFixes` は、`position: "before"` の `add` を、場所の要素の直前に同じ字下げで兄弟として入れます。足した要素は空なので、中身が必須なら検証し直したときに別の違反として出ます（`notes` に書きます）。照合では `position` も一致を求めます。
+  - Issue 7 の XSD で、`applic` を抜いた説明 DM に「`brexDmRef` の前に `applic` を足す」候補が付き、適用すると `brexDmRef` の位置の違反が消えることをテストに固定しました（`S1000D_SPEC_TESTS=1`）。
+
 ## 0.8.2 (2026-10-29)
 
 hub の E2E テストで見つかった 2 点を直しました。既存の API は変えていません（関数を 1 つ足しただけです）。

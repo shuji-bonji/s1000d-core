@@ -361,6 +361,21 @@ describe('applyFix: XSD 違反（libxml2 の文章から作った候補）', () 
     );
   });
 
+  it('前に足す add: 場所の要素の直前に、同じ字下げで兄弟として入る', () => {
+    const xml = `<root kind="x">\n  <a>1</a>\n  <c>2</c>\n</root>`;
+    const msg = "Element 'c': This element is not expected. Expected is ( b ).";
+    const r = run(xml, msg, '/root/c', (c) => c.action === 'add' && c.position === 'before');
+    expect(r.xml).toBe(`<root kind="x">\n  <a>1</a>\n  <b/>\n  <c>2</c>\n</root>`);
+    expect(r.changed).toMatchObject({ xpath: '/root/b', after: '<b>' });
+    expect(r.notes.join(' ')).toContain('verify again');
+    // position を外した選択は、提案された候補と一致しない
+    const fixes = suggestSchemaFixes([err(msg, '/root/c')], { xsd });
+    const plain = { action: 'add' as const, value: 'b', target: 'c', description: '' };
+    expect(applyFix(xml, fixes[0]!, plain, { offered: fixes }).reason).toBe(
+      'candidate-not-offered',
+    );
+  });
+
   it('足りない子要素の add: XSD の出現順の位置に、同じ字下げで入る', () => {
     const xml = `<root kind="x">\n  <b>2</b>\n</root>`;
     const r = run(

@@ -268,12 +268,19 @@ function variantDrafts(): Array<[string, DraftDataModule]> {
       },
     ],
     [
-      'proced: 条件なし・題名なしの手順・手順の中の表と箇条書きと警告',
+      'proced: 条件なしで安全の要件だけ・題名なしの手順・手順の中の表と箇条書きと警告',
       {
         ...base,
         sourceId: 'v-proced',
         kind: 'proced',
         body: [
+          {
+            kind: 'requirements',
+            children: [
+              { kind: 'admonition', level: 'warning', text: '作業の前に電源を切る' },
+              { kind: 'admonition', level: 'caution', text: '扉は重い' },
+            ],
+          },
           {
             kind: 'step',
             text: '準備する。',
@@ -300,13 +307,21 @@ function variantDrafts(): Array<[string, DraftDataModule]> {
       },
     ],
     [
-      'fault: 前提・事後条件・図・手順の注記',
+      'fault: 前提・事後条件・安全の要件・図・手順の注記',
       {
         ...base,
         sourceId: 'v-fault',
         kind: 'fault',
         body: [
-          { kind: 'requirements', text: '電源が切れていること' },
+          {
+            kind: 'requirements',
+            text: '電源が切れていること',
+            children: [
+              { kind: 'admonition', level: 'note', text: '作業は 2 人で行う' },
+              { kind: 'admonition', level: 'caution', text: '扉は重い' },
+              { kind: 'admonition', level: 'warning', text: '高電圧' },
+            ],
+          },
           {
             kind: 'step',
             id: 'a1',

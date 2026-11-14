@@ -2,8 +2,9 @@
  * proced（手順）の内容部: `content/procedure`（preliminaryRqmts → mainProcedure → closeRqmts）。
  *
  * 受け付ける kind: step（proceduralStep）・requirements・figure・table。
- * - `requirements` は本体（step・figure・table）より前なら前提条件、後なら事後条件。条件の文だけを受け取る
- * - XSD が要求する preliminaryRqmts の残り（支援機材・消耗品・予備品・安全）は「なし」で埋め、notes に書く
+ * - `requirements` は本体（step・figure・table）より前なら前提条件、後なら事後条件。条件の文（text と子の para）を受け取る
+ * - 前の `requirements` の子の admonition は、作業全体にかかる安全の要件（reqSafety/safetyRqmts の warning / caution / note）になる
+ * - XSD が要求する preliminaryRqmts の残り（支援機材・消耗品・予備品。安全の要件が無ければ安全も）は「なし」で埋め、notes に書く
  * 読む側は content/read.ts の `proceduralStep → step`（番号は読み取り時に付く）。
  */
 import type { Element } from '../../xml/engine.js';

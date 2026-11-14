@@ -2,7 +2,14 @@
 
 ## 未リリース
 
-実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません。
+実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません（下書きの `requirements` が受け取る子の種類を 1 つ足しました）。
+
+### 追加
+
+- 下書き（`DraftNode`）の `requirements`（手順・故障探求の本体より前のもの）が、子に `admonition` を受け取ります（docs/notes/tm-eval-requests.md の W-1 のうち、安全の要件の分）。作業全体にかかる警告・注意・備考として、`preliminaryRqmts/reqSafety/safetyRqmts` の `warning` / `caution` / `note` に書きます。これまでは安全の要件を渡す方法が無く、`reqSafety` は必ず `noSafety` でした。
+  - XSD の並びに合わせ、入力の位置にかかわらず警告 → 注意 → 備考の順に書きます（並べ替えたときは `notes` に書きます）。
+  - 本体より後ろの `requirements`（`closeRqmts`）に `admonition` を置くと `DraftInputError` です（`closeRqmts` に安全の要件の場所が無いため）。
+  - 支援機材・消耗品・予備品は、これまでどおり受け取らず「なし」の要素で埋めます。
 
 ### 修正
 

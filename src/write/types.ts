@@ -32,7 +32,7 @@ export type DraftNodeKind =
   | 'admonition'
   /** proced・process の proceduralStep、fault の isolationStep / isolationProcedureEnd */
   | 'step'
-  /** preliminaryRqmts / closeRqmts の条件（文だけ。位置で前後が決まる） */
+  /** preliminaryRqmts / closeRqmts の条件（文。位置で前後が決まる）。前の requirements は、子の admonition を安全の要件として受け取る */
   | 'requirements'
   /** process の dmSeq */
   | 'sequence'

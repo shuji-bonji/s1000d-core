@@ -1,3 +1,4 @@
+import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect, it } from 'vitest';
 import * as F from '../__fixtures__/kenbaiki-drafts.js';
 import { CsdbIndex } from '../csdb-index.js';
@@ -488,6 +489,7 @@ describe('往復: DraftNode → XML → readContentFromXml', () => {
 describe('入力の形の検査（DraftInputError）', () => {
   const allocation = F.kenbaikiAllocation();
   const build = (kind: DraftDataModule['kind'], body: DraftNode[]) => buildContent(kind, body);
+  const serialize = (e: unknown) => new XMLSerializer().serializeToString(e as never);
   const fail = (fn: () => unknown): DraftInputError => {
     try {
       fn();
@@ -705,6 +707,73 @@ describe('入力の形の検査（DraftInputError）', () => {
       ]),
     );
     expect(e.path).toBe('/body[1]/children[2]');
+  });
+
+  it('requirements の子の admonition は安全の要件になり、警告 → 注意 → 備考の順に並ぶ', () => {
+    const notes: string[] = [];
+    const xml = serialize(
+      buildContent(
+        'proced',
+        [
+          {
+            kind: 'requirements',
+            text: '電源が切れていること',
+            children: [
+              { kind: 'admonition', level: 'note', text: '作業は 2 人で行う。' },
+              { kind: 'para', text: '扉が開いていること' },
+              { kind: 'admonition', level: 'caution', text: '扉は重い。' },
+              {
+                kind: 'admonition',
+                level: 'warning',
+                children: [
+                  { kind: 'para', text: '高電圧。' },
+                  { kind: 'para', text: '電源を切ってから触れる。' },
+                ],
+              },
+            ],
+          },
+          { kind: 'step', text: 'x' },
+        ],
+        { notes },
+      ),
+    );
+    expect(xml).toContain(
+      '<reqCondGroup><reqCondNoRef><reqCond>電源が切れていること</reqCond></reqCondNoRef><reqCondNoRef><reqCond>扉が開いていること</reqCond></reqCondNoRef></reqCondGroup>',
+    );
+    expect(xml).toContain(
+      '<reqSafety><safetyRqmts><warning><warningAndCautionPara>高電圧。</warningAndCautionPara><warningAndCautionPara>電源を切ってから触れる。</warningAndCautionPara></warning><caution><warningAndCautionPara>扉は重い。</warningAndCautionPara></caution><note><notePara>作業は 2 人で行う。</notePara></note></safetyRqmts></reqSafety>',
+    );
+    expect(xml).not.toContain('noSafety');
+    expect(notes.join('\n')).toMatch(/warnings, then cautions, then notes/);
+    expect(notes.join('\n')).toMatch(/cannot carry support equipment, supplies or spares/);
+    // fault でも同じ。条件が無ければ noConds のまま、安全の要件だけを書く
+    const fault = serialize(
+      buildContent('fault', [
+        {
+          kind: 'requirements',
+          children: [{ kind: 'admonition', level: 'warning', text: '高電圧。' }],
+        },
+        { kind: 'step', id: 'a', text: '係員を呼ぶ。' },
+      ]),
+    );
+    expect(fault).toContain(
+      '<reqCondGroup><noConds/></reqCondGroup><reqSupportEquips><noSupportEquips/></reqSupportEquips><reqSupplies><noSupplies/></reqSupplies><reqSpares><noSpares/></reqSpares><reqSafety><safetyRqmts><warning>',
+    );
+  });
+
+  it('後ろの requirements（事後条件）に admonition は置けない', () => {
+    const e = fail(() =>
+      build('proced', [
+        { kind: 'step', text: 'x' },
+        {
+          kind: 'requirements',
+          text: '扉が閉まっていること',
+          children: [{ kind: 'admonition', level: 'warning', text: '高電圧。' }],
+        },
+      ]),
+    );
+    expect(e.path).toBe('/body[2]/children[1]');
+    expect(e.detail).toMatch(/closeRqmts has no safety requirements/);
   });
 
   it('requirements は前後に 1 つずつまで', () => {

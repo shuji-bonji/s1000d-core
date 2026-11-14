@@ -70,7 +70,7 @@ export const ALLOWED: Record<DraftKind, Partial<Record<Parent, readonly DraftNod
     listItem: ['para', 'admonition', 'list'],
     definition: ['para'],
     admonition: ['para'],
-    requirements: ['para'],
+    requirements: ['para', 'admonition'],
   },
   process: {
     body: ['sequence', 'section', 'if'],
@@ -88,7 +88,7 @@ export const ALLOWED: Record<DraftKind, Partial<Record<Parent, readonly DraftNod
     body: ['step', 'requirements', 'figure', 'table'],
     step: ['para', 'admonition', 'figure', 'table'],
     admonition: ['para'],
-    requirements: ['para'],
+    requirements: ['para', 'admonition'],
   },
   pm: {
     body: ['section', 'entry'],
@@ -633,7 +633,10 @@ export class Writer {
     return out;
   }
 
-  /** reqCondGroup: 文があれば reqCondNoRef/reqCond に、無ければ noConds */
+  /**
+   * reqCondGroup: 文があれば reqCondNoRef/reqCond に、無ければ noConds。
+   * 子の admonition（安全の要件）はここでは読まない（`reqSafety` が書く）
+   */
   reqCondGroup(req?: { node: DraftNode; path: string }): Element {
     const group = this.el('reqCondGroup');
     const texts: string[] = [];
@@ -641,6 +644,7 @@ export class Writer {
       this.checkFields(req.node, req.path);
       if (req.node.text !== undefined) texts.push(req.node.text);
       this.childrenOf(req.node, 'requirements', req.path).forEach((c, i) => {
+        if (c.kind === 'admonition') return;
         if (c.text === undefined) {
           throw new DraftInputError(`${req.path}/children[${i + 1}]`, 'a requirement needs text');
         }
@@ -663,8 +667,36 @@ export class Writer {
   }
 
   /**
+   * reqSafety: `requirements` の子の admonition を safetyRqmts の warning / caution / note に書く。無ければ noSafety。
+   * XSD が警告 → 注意 → 備考の順を要求するので、入力の位置にかかわらずこの順に並べる
+   */
+  private reqSafety(req?: { node: DraftNode; path: string }): { element: Element; count: number } {
+    const e = this.el('reqSafety');
+    const found = (req?.node.children ?? [])
+      .map((c, i) => ({ c, path: `${req!.path}/children[${i + 1}]` }))
+      .filter((x) => x.c.kind === 'admonition');
+    if (found.length === 0) {
+      e.appendChild(this.el('noSafety'));
+      return { element: e, count: 0 };
+    }
+    const order = { warning: 0, caution: 1, note: 2 } as const;
+    const rank = (n: DraftNode) => (n.level ? order[n.level] : 3);
+    const sorted = [...found].sort((a, b) => rank(a.c) - rank(b.c));
+    if (sorted.some((x, i) => x !== found[i])) {
+      this.notes.push(
+        `${req!.path}: the safety requirements were written as warnings, then cautions, then notes, as the schema requires.`,
+      );
+    }
+    const safety = this.el('safetyRqmts');
+    for (const { c, path } of sorted) safety.appendChild(this.admonition(c, path));
+    e.appendChild(safety);
+    return { element: e, count: found.length };
+  }
+
+  /**
    * preliminaryRqmts。XSD は条件・支援機材・消耗品・予備品・安全の 5 つをすべて要求する。
-   * 入力は条件の文だけを受け取るので、残りは「なし」の要素で埋め、notes に書く
+   * 入力は条件の文（text と子の para）と安全の要件（子の admonition）を受け取る。
+   * 支援機材・消耗品・予備品は受け取らないので「なし」の要素で埋め、notes に書く
    */
   preliminaryRqmts(req?: { node: DraftNode; path: string }): Element {
     const e = this.el('preliminaryRqmts');
@@ -677,14 +709,25 @@ export class Writer {
     none('reqSupportEquips', 'noSupportEquips');
     none('reqSupplies', 'noSupplies');
     none('reqSpares', 'noSpares');
-    none('reqSafety', 'noSafety');
+    const safety = this.reqSafety(req);
+    e.appendChild(safety.element);
     this.notes.push(
-      'preliminaryRqmts: the input has no support equipment, supplies, spares or safety requirements, so noSupportEquips, noSupplies, noSpares and noSafety were written (the schema requires these elements).',
+      safety.count > 0
+        ? 'preliminaryRqmts: the input cannot carry support equipment, supplies or spares, so noSupportEquips, noSupplies and noSpares were written (the schema requires these elements).'
+        : 'preliminaryRqmts: the input has no support equipment, supplies, spares or safety requirements, so noSupportEquips, noSupplies, noSpares and noSafety were written (the schema requires these elements). A procedure that has warnings or cautions for the whole task needs them as "admonition" children of the "requirements" node.',
     );
     return e;
   }
 
   closeRqmts(req?: { node: DraftNode; path: string }): Element {
+    (req?.node.children ?? []).forEach((c, i) => {
+      if (c.kind === 'admonition') {
+        throw new DraftInputError(
+          `${req!.path}/children[${i + 1}]`,
+          'an "admonition" node is accepted only in the "requirements" node before the main procedure (closeRqmts has no safety requirements)',
+        );
+      }
+    });
     const e = this.el('closeRqmts');
     e.appendChild(this.reqCondGroup(req));
     return e;

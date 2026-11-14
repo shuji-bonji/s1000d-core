@@ -119,6 +119,24 @@ describe('readContent', () => {
     expect(pre.text).toContain('support equipment: 保守鍵 P/N KEY-01 x1');
     expect(pre.text).toContain('supplies: none');
     expect(pre.text).toContain('safety: warning: 扉を開ける前に電源を切る');
+    // 人員・品目・安全の要件は、子の節点としても返す（書く側の DraftNode と同じ種類）
+    expect(pre.children.map((n) => n.kind)).toEqual(['person', 'equipment', 'admonition']);
+    expect(pre.children[0]).toMatchObject({
+      kind: 'person',
+      element: 'person',
+      text: '係員',
+      attrs: { man: 'A', personCategoryCode: 'Operator' },
+    });
+    expect(pre.children[1]).toMatchObject({
+      kind: 'equipment',
+      id: 'seq-0001',
+      title: '保守鍵',
+      manufacturerCode: 'K0001',
+      partNumber: 'KEY-01',
+      quantity: '1',
+      unit: 'EA',
+    });
+    expect(pre.children[2]).toMatchObject({ kind: 'admonition', level: 'warning' });
     expect(s1).toMatchObject({ kind: 'step', number: '1', id: 'stp-0001' });
     expect(s1.text).toBe('保守鍵（ [→ seq-0001] ）で前面扉を開ける。');
     expect(s1.refs).toEqual([{ kind: 'internalRef', target: 'seq-0001', note: 'irtt05' }]);

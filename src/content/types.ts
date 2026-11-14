@@ -22,8 +22,18 @@ export type ContentNodeKind =
   | 'admonition'
   /** proceduralStep / isolationStep / isolationProcedureEnd */
   | 'step'
-  /** preliminaryRqmts / closeRqmts の要約 */
+  /** preliminaryRqmts / closeRqmts。`text` が全体の要約、子が人員・文書・品目・安全の要件 */
   | 'requirements'
+  /** requirements の子: 必要な人員（personnel / person）。`text` が役割（trade）、`count` が人数 */
+  | 'person'
+  /** requirements の子: 参照する文書（reqTechInfo）。`refs` に参照、外部の文書は `title`（題名）と `text`（番号） */
+  | 'document'
+  /** requirements の子: 試験器材・工具（supportEquipDescr）。`title` が名前 */
+  | 'equipment'
+  /** requirements の子: 材料・消耗品（supplyDescr） */
+  | 'supply'
+  /** requirements の子: 予備品（spareDescr） */
+  | 'spare'
   /** process の dmSeq */
   | 'sequence'
   /** process の dmIf（条件分岐） */
@@ -64,6 +74,14 @@ export interface ContentNode {
   /** fault の isolationStep: 問いと、答えごとの次の手順。process の dmIf では条件を人が読める文にしたもの（`expression/@humanReadableForm`） */
   question?: string;
   choices?: Array<{ text: string; nextActionRefId?: string }>;
+  /** person の人数（`personnel/@numRequired`） */
+  count?: number;
+  /** equipment / supply / spare の数量（`reqQuantity`）と単位（`@unitOfMeasure`）。値は解釈しない */
+  quantity?: string;
+  unit?: string;
+  /** equipment / supply / spare の部品番号と製造者のコード（`identNumber`） */
+  partNumber?: string;
+  manufacturerCode?: string;
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */
   applicRefId?: string;
   /** 要素自身の `@securityClassification`（機密区分。値は解釈しない。無ければ親または DM 全体の区分に従う） */

@@ -173,6 +173,18 @@ const INLINE = new Set([
   'realValue',
 ]);
 
+/** 品目（supportEquipDescr など）の識別子のうち、identNumber 以外の要素 */
+const ITEM_IDENTIFIERS = new Set([
+  'catalogSeqNumberRef',
+  'natoStockNumber',
+  'toolRef',
+  'materialSetRef',
+  'supplyRef',
+  'supplyRqmtRef',
+  'partRef',
+  'functionalItemRef',
+]);
+
 function attr(el: Element, name: string): string | undefined {
   const v = el.getAttribute(name);
   return v === null || v === '' ? undefined : v;
@@ -399,6 +411,7 @@ class Reader {
       }
       case 'requirements':
         node.text = this.requirementsText(el, refs);
+        node.children = this.requirementsChildren(el);
         break;
       case 'if': {
         node.text = attr(el, 'applicRefId') ? `if applic ${attr(el, 'applicRefId')}` : undefined;
@@ -466,6 +479,105 @@ class Reader {
   readChildren(el: Element, stepCounter?: { n: number; prefix: string }): ContentNode[] {
     const out: ContentNode[] = [];
     for (const c of elements(el)) out.push(...this.readElement(c, stepCounter));
+    return out;
+  }
+
+  /**
+   * preliminaryRqmts の人員・文書・品目・安全の要件を、子の節点として返す（書く側の `DraftNode` と同じ種類）。
+   * 条件（reqCondGroup）は要約の文（`text`）にだけ入れる
+   */
+  private requirementsChildren(el: Element): ContentNode[] {
+    const out: ContentNode[] = [];
+    const base = (kind: ContentNodeKind, e: Element): ContentNode => {
+      const n: ContentNode = {
+        kind,
+        element: e.nodeName,
+        children: [],
+        location: describeLocation(e),
+      };
+      const id = attr(e, 'id');
+      if (id) n.id = id;
+      const applicRefId = attr(e, 'applicRefId');
+      if (applicRefId) n.applicRefId = applicRefId;
+      const security = attr(e, 'securityClassification');
+      if (security) n.securityClassification = security;
+      return n;
+    };
+    const str = (expr: string, e: Element) => {
+      const v = this.engine.selectString(expr, e);
+      return v ? norm(v) : undefined;
+    };
+    const put = (attrs: Record<string, string>, key: string, v: string | undefined) => {
+      if (v) attrs[key] = v;
+    };
+
+    for (const p of this.engine.selectNodes(
+      'reqPersons/personnel | reqPersons/person',
+      el,
+    ) as Element[]) {
+      const n = base('person', p);
+      const trade = str('trade', p);
+      if (trade) n.text = trade;
+      const num = attr(p, 'numRequired');
+      if (num && /^\d+$/.test(num)) n.count = Number(num);
+      const attrs: Record<string, string> = {};
+      put(attrs, 'man', attr(p, 'man'));
+      put(attrs, 'personCategoryCode', str('personCategory/@personCategoryCode', p));
+      put(attrs, 'skillLevelCode', str('personSkill/@skillLevelCode', p));
+      put(attrs, 'estimatedTime', str('estimatedTime', p));
+      put(attrs, 'estimatedTimeUnit', str('estimatedTime/@unitOfMeasure', p));
+      if (Object.keys(attrs).length > 0) n.attrs = attrs;
+      out.push(n);
+    }
+
+    for (const info of this.engine.selectNodes('reqTechInfoGroup/reqTechInfo', el) as Element[]) {
+      const n = base('document', info);
+      const refEl = elements(info)[0];
+      const r = refEl ? this.refOf(refEl) : undefined;
+      if (r) {
+        n.refs = [r];
+        if (r.title) n.title = r.title;
+      }
+      if (refEl?.nodeName === 'externalPubRef') {
+        const code = str('externalPubRefIdent/externalPubCode', refEl);
+        if (code) n.text = code;
+      }
+      const category = attr(info, 'reqTechInfoCategory');
+      if (category) n.attrs = { reqTechInfoCategory: category };
+      out.push(n);
+    }
+
+    const items = (kind: 'equipment' | 'supply' | 'spare', expr: string) => {
+      for (const d of this.engine.selectNodes(expr, el) as Element[]) {
+        const n = base(kind, d);
+        const name = str('name', d);
+        if (name) n.title = name;
+        const mfc = str('identNumber/manufacturerCode', d);
+        if (mfc) n.manufacturerCode = mfc;
+        const pn = str('identNumber/partAndSerialNumber/partNumber', d);
+        if (pn) n.partNumber = pn;
+        const qty = str('reqQuantity', d);
+        if (qty) n.quantity = qty;
+        const unit = str('reqQuantity/@unitOfMeasure', d);
+        if (unit) n.unit = unit;
+        const remarks = (this.engine.selectNodes('remarks/simplePara', d) as Element[])
+          .map((r) => deepText(r))
+          .filter(Boolean);
+        if (remarks.length > 0) n.text = remarks.join(' ');
+        // identNumber 以外の識別子は、要素名だけを残す（中身は読んでいない）
+        const others = elements(d)
+          .map((c) => c.nodeName)
+          .filter((x) => ITEM_IDENTIFIERS.has(x));
+        if (others.length > 0) n.attrs = { otherIdentifiers: [...new Set(others)].join(' ') };
+        out.push(n);
+      }
+    };
+    items('equipment', 'reqSupportEquips/supportEquipDescrGroup/supportEquipDescr');
+    items('supply', 'reqSupplies/supplyDescrGroup/supplyDescr');
+    items('spare', 'reqSpares/spareDescrGroup/spareDescr');
+
+    for (const s of this.engine.selectNodes('reqSafety/safetyRqmts/*', el) as Element[])
+      out.push(...this.readElement(s));
     return out;
   }
 

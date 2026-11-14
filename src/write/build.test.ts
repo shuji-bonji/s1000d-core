@@ -745,7 +745,9 @@ describe('入力の形の検査（DraftInputError）', () => {
     );
     expect(xml).not.toContain('noSafety');
     expect(notes.join('\n')).toMatch(/warnings, then cautions, then notes/);
-    expect(notes.join('\n')).toMatch(/cannot carry support equipment, supplies or spares/);
+    expect(notes.join('\n')).toMatch(
+      /the input has no support equipment \("equipment" nodes\), supplies \("supply" nodes\), spares \("spare" nodes\) in the "requirements" node, so noSupportEquips, noSupplies, noSpares were written/,
+    );
     // fault でも同じ。条件が無ければ noConds のまま、安全の要件だけを書く
     const fault = serialize(
       buildContent('fault', [
@@ -773,7 +775,147 @@ describe('入力の形の検査（DraftInputError）', () => {
       ]),
     );
     expect(e.path).toBe('/body[2]/children[1]');
-    expect(e.detail).toMatch(/closeRqmts has no safety requirements/);
+    expect(e.detail).toMatch(/closeRqmts takes conditions only/);
+  });
+
+  it('requirements の子の person・document・equipment・supply・spare を preliminaryRqmts の各区分に書く', () => {
+    const notes: string[] = [];
+    const xml = serialize(
+      buildContent(
+        'proced',
+        [
+          {
+            kind: 'requirements',
+            children: [
+              { kind: 'spare', title: 'ヒューズ', manufacturerCode: 'K0001', quantity: '2' },
+              {
+                kind: 'equipment',
+                id: 'seq-0001',
+                title: '保守鍵',
+                manufacturerCode: 'K0001',
+                partNumber: 'KEY-01',
+                quantity: '1',
+                unit: 'EA',
+                text: '係員が持つ',
+              },
+              { kind: 'document', title: '保守の手引き', text: 'KB-M-001' },
+              {
+                kind: 'document',
+                title: '指定席券売機',
+                refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-20-00-00A-040A-D' }],
+              },
+              { kind: 'person', text: '係員', count: 2 },
+              { kind: 'person', text: '補助者' },
+              { kind: 'para', text: '発売を停止していること' },
+            ],
+          },
+          { kind: 'step', text: 'x' },
+        ],
+        { notes },
+      ),
+    );
+    // XSD の順: 条件 → 人員 → 文書 → 支援機材 → 消耗品 → 予備品 → 安全
+    expect(xml.replace(/<dmCode [^>]*\/>/, '<dmCode/>')).toContain(
+      '<preliminaryRqmts>' +
+        '<reqCondGroup><reqCondNoRef><reqCond>発売を停止していること</reqCond></reqCondNoRef></reqCondGroup>' +
+        '<reqPersons><personnel numRequired="2"><trade>係員</trade></personnel><personnel><trade>補助者</trade></personnel></reqPersons>' +
+        '<reqTechInfoGroup>' +
+        '<reqTechInfo><externalPubRef><externalPubRefIdent><externalPubCode>KB-M-001</externalPubCode><externalPubTitle>保守の手引き</externalPubTitle></externalPubRefIdent></externalPubRef></reqTechInfo>' +
+        '<reqTechInfo><dmRef><dmRefIdent><dmCode/></dmRefIdent><dmRefAddressItems><dmTitle><techName>指定席券売機</techName></dmTitle></dmRefAddressItems></dmRef></reqTechInfo>' +
+        '</reqTechInfoGroup>' +
+        '<reqSupportEquips><supportEquipDescrGroup><supportEquipDescr id="seq-0001"><name>保守鍵</name><identNumber><manufacturerCode>K0001</manufacturerCode><partAndSerialNumber><partNumber>KEY-01</partNumber></partAndSerialNumber></identNumber><reqQuantity unitOfMeasure="EA">1</reqQuantity><remarks><simplePara>係員が持つ</simplePara></remarks></supportEquipDescr></supportEquipDescrGroup></reqSupportEquips>' +
+        '<reqSupplies><noSupplies/></reqSupplies>' +
+        '<reqSpares><spareDescrGroup><spareDescr><name>ヒューズ</name><identNumber><manufacturerCode>K0001</manufacturerCode></identNumber><reqQuantity>2</reqQuantity></spareDescr></spareDescrGroup></reqSpares>' +
+        '<reqSafety><noSafety/></reqSafety>' +
+        '</preliminaryRqmts>',
+    );
+    expect(notes.join('\n')).toMatch(/so noSupplies, noSafety were written/);
+  });
+
+  it('組み立てた preliminaryRqmts を読むと、同じ種類の節点が返る（書いて読んで同じ）', () => {
+    const children: DraftNode[] = [
+      { kind: 'person', text: '係員', count: 2 },
+      { kind: 'document', title: '保守の手引き', text: 'KB-M-001' },
+      {
+        kind: 'equipment',
+        title: '保守鍵',
+        text: '係員が持つ',
+        quantity: '1',
+        unit: 'EA',
+        partNumber: 'KEY-01',
+        manufacturerCode: 'K0001',
+      },
+      { kind: 'supply', title: 'ウエス', quantity: '1', manufacturerCode: 'K0001' },
+      { kind: 'spare', title: 'ヒューズ', quantity: '2', manufacturerCode: 'K0001' },
+      { kind: 'admonition', level: 'warning', children: [{ kind: 'para', text: '高電圧。' }] },
+    ];
+    const draft = F.procedDraft();
+    draft.body = [
+      { kind: 'requirements', children },
+      { kind: 'step', text: 'x' },
+    ];
+    const { xml } = buildDataModule(draft, F.kenbaikiAllocation(), {
+      defaultBrexRef: { dmCode: defaultBrex },
+    });
+    const pre = readContentFromXml(xml).blocks[0];
+    const pick = (n: ContentNode): DraftNode => ({
+      kind: n.kind as DraftNode['kind'],
+      ...(n.title !== undefined ? { title: n.title } : {}),
+      ...(n.text !== undefined ? { text: n.text } : {}),
+      ...(n.level !== undefined ? { level: n.level } : {}),
+      ...(n.count !== undefined ? { count: n.count } : {}),
+      ...(n.quantity !== undefined ? { quantity: n.quantity } : {}),
+      ...(n.unit !== undefined ? { unit: n.unit } : {}),
+      ...(n.partNumber !== undefined ? { partNumber: n.partNumber } : {}),
+      ...(n.manufacturerCode !== undefined ? { manufacturerCode: n.manufacturerCode } : {}),
+      ...(n.children.length > 0 ? { children: n.children.map(pick) } : {}),
+    });
+    expect(pre.children.map(pick)).toEqual(children);
+    expect(pre.children[1].refs).toEqual([
+      { kind: 'externalPubRef', target: 'KB-M-001', title: '保守の手引き' },
+    ]);
+  });
+
+  it('品目は識別子と数量が要る（値は補わない）。人員・文書・事後条件の形も確かめる', () => {
+    const req = (child: DraftNode) =>
+      fail(() =>
+        build('proced', [
+          { kind: 'requirements', children: [child] },
+          { kind: 'step', text: 'x' },
+        ]),
+      );
+    expect(req({ kind: 'supply', title: 'ウエス', quantity: '1' })).toMatchObject({
+      path: '/body[1]/children[1]/manufacturerCode',
+    });
+    expect(req({ kind: 'equipment', title: '鍵', manufacturerCode: 'K0001' })).toMatchObject({
+      path: '/body[1]/children[1]/quantity',
+    });
+    expect(req({ kind: 'person' }).detail).toMatch(/needs text \(the role\) or count/);
+    expect(req({ kind: 'person', text: '係員', count: 0 }).path).toBe('/body[1]/children[1]/count');
+    expect(req({ kind: 'document' }).detail).toMatch(/needs a ref, or title/);
+    expect(req({ kind: 'document', refs: [{ kind: 'internalRef', target: 'a' }] }).detail).toMatch(
+      /takes a dmRef or a pmRef/,
+    );
+    expect(req({ kind: 'person', text: '係員', quantity: '1' }).detail).toMatch(
+      /property "quantity" is not accepted on a "person" node/,
+    );
+    // 手順の中や説明には置けない
+    expect(
+      fail(() =>
+        build('proced', [
+          { kind: 'step', text: 'x', children: [{ kind: 'person', text: '係員' }] },
+        ]),
+      ).path,
+    ).toBe('/body[1]/children[1]');
+    // 事後条件は条件の文だけ
+    expect(
+      fail(() =>
+        build('proced', [
+          { kind: 'step', text: 'x' },
+          { kind: 'requirements', children: [{ kind: 'person', text: '係員' }] },
+        ]),
+      ).detail,
+    ).toMatch(/closeRqmts takes conditions only/);
   });
 
   it('requirements は前後に 1 つずつまで', () => {

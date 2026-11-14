@@ -279,6 +279,21 @@ function variantDrafts(): Array<[string, DraftDataModule]> {
             children: [
               { kind: 'admonition', level: 'warning', text: '作業の前に電源を切る' },
               { kind: 'admonition', level: 'caution', text: '扉は重い' },
+              { kind: 'person', text: '係員', count: 2 },
+              { kind: 'person', text: '補助者' },
+              { kind: 'document', title: '保守の手引き', text: 'KB-M-001' },
+              { kind: 'document', refs: [{ kind: 'dmRef', target: proced }] },
+              {
+                kind: 'equipment',
+                title: '保守鍵',
+                text: '係員が持つ',
+                quantity: '1',
+                unit: 'EA',
+                partNumber: 'KEY-01',
+                manufacturerCode: 'K0001',
+              },
+              { kind: 'supply', title: 'ウエス', quantity: '1', manufacturerCode: 'K0001' },
+              { kind: 'spare', title: 'ヒューズ', quantity: '2', manufacturerCode: 'K0001' },
             ],
           },
           {

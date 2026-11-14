@@ -2,14 +2,23 @@
 
 ## 未リリース
 
-実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません（下書きの `requirements` が受け取る子の種類を 1 つ足しました）。
+実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません（下書きと読み取りの節点に、種類と任意の項目を足しました）。
 
 ### 追加
 
 - 下書き（`DraftNode`）の `requirements`（手順・故障探求の本体より前のもの）が、子に `admonition` を受け取ります（docs/notes/tm-eval-requests.md の W-1 のうち、安全の要件の分）。作業全体にかかる警告・注意・備考として、`preliminaryRqmts/reqSafety/safetyRqmts` の `warning` / `caution` / `note` に書きます。これまでは安全の要件を渡す方法が無く、`reqSafety` は必ず `noSafety` でした。
   - XSD の並びに合わせ、入力の位置にかかわらず警告 → 注意 → 備考の順に書きます（並べ替えたときは `notes` に書きます）。
   - 本体より後ろの `requirements`（`closeRqmts`）に `admonition` を置くと `DraftInputError` です（`closeRqmts` に安全の要件の場所が無いため）。
-  - 支援機材・消耗品・予備品は、これまでどおり受け取らず「なし」の要素で埋めます。
+- 下書きの `requirements`（同上）が、人員・参照する文書・品目も受け取ります（W-1 の残り）。節点の種類 `person`・`document`・`equipment`・`supply`・`spare` と、項目 `count`・`quantity`・`unit`・`partNumber`・`manufacturerCode` を足しました（JSON Schema も同じ）。
+  - `person` → `reqPersons/personnel`（`count` が `@numRequired`、`text` が `trade`）。
+  - `document` → `reqTechInfoGroup/reqTechInfo`。`refs` に `dmRef` か `pmRef` が 1 つあればその参照、無ければ `title`（題名）と `text`（番号）から `externalPubRef`。
+  - `equipment`・`supply`・`spare` → `supportEquipDescr`・`supplyDescr`・`spareDescr`（`title` が `name`、`manufacturerCode` と `partNumber` が `identNumber`、`quantity` と `unit` が `reqQuantity`、`text` が `remarks`）。XSD は品目に識別子と `reqQuantity` を要求します。値を補うことはしないので、`manufacturerCode` か `quantity` が無い品目は `DraftInputError` です。
+  - 入力に無い必須の区分（支援機材・消耗品・予備品・安全）は、これまでどおり「なし」の要素で埋め、どれを埋めたかを `notes` に書きます。
+- `readContent` は、`preliminaryRqmts` の人員・文書・品目・安全の要件を、`requirements` の子の節点として返します（種類と項目は下書きと同じ。`ContentNode` に `count`・`quantity`・`unit`・`partNumber`・`manufacturerCode` を足しました）。`requirements` の `text`（1 つの文にした要約）はこれまでどおりです。
+
+### 変更（数え方が変わります）
+
+- `measureContent` / `outlineContent` の警告の数（`admonitions`）に、`reqSafety/safetyRqmts` の警告・注意・備考が入ります。これまでは要約の文にだけ入り、数に入っていませんでした。節点の数（`nodes`）と文字数（`chars`）にも、`requirements` の子の分が加わります。
 
 ### 修正
 

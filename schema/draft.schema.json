@@ -287,6 +287,11 @@
             "admonition",
             "step",
             "requirements",
+            "person",
+            "document",
+            "equipment",
+            "supply",
+            "spare",
             "sequence",
             "if",
             "dialog",
@@ -350,6 +355,27 @@
             "additionalProperties": false
           },
           "description": "fault の step の答えと次の手順。process の dialog では選択肢"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "person の人数"
+        },
+        "quantity": {
+          "type": "string",
+          "description": "equipment / supply / spare の数量（必須）"
+        },
+        "unit": {
+          "type": "string",
+          "description": "数量の単位（値は解釈しない）"
+        },
+        "partNumber": {
+          "type": "string",
+          "description": "equipment / supply / spare の部品番号"
+        },
+        "manufacturerCode": {
+          "type": "string",
+          "description": "equipment / supply / spare の製造者のコード（必須）"
         },
         "applicRefId": {
           "type": "string"

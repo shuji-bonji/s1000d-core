@@ -32,8 +32,21 @@ export type DraftNodeKind =
   | 'admonition'
   /** proced・process の proceduralStep、fault の isolationStep / isolationProcedureEnd */
   | 'step'
-  /** preliminaryRqmts / closeRqmts の条件（文。位置で前後が決まる）。前の requirements は、子の admonition を安全の要件として受け取る */
+  /**
+   * preliminaryRqmts / closeRqmts の条件（文。位置で前後が決まる）。前の requirements は、子の admonition を安全の要件として、
+   * person・document・equipment・supply・spare を人員・文書・品目として受け取る
+   */
   | 'requirements'
+  /** requirements の子: 必要な人員（reqPersons/personnel）。`text` が役割、`count` が人数 */
+  | 'person'
+  /** requirements の子: 参照する文書（reqTechInfo）。`refs` に dmRef / pmRef が 1 つ、または `title`（題名）と `text`（番号） */
+  | 'document'
+  /** requirements の子: 試験器材・工具（supportEquipDescr）。`title` が名前。`manufacturerCode` と `quantity` が要る */
+  | 'equipment'
+  /** requirements の子: 材料・消耗品（supplyDescr）。項目は equipment と同じ */
+  | 'supply'
+  /** requirements の子: 予備品（spareDescr）。項目は equipment と同じ */
+  | 'spare'
   /** process の dmSeq */
   | 'sequence'
   /** process の dmIf（条件分岐） */
@@ -55,6 +68,11 @@ export const DRAFT_NODE_KINDS = [
   'admonition',
   'step',
   'requirements',
+  'person',
+  'document',
+  'equipment',
+  'supply',
+  'spare',
   'sequence',
   'if',
   'dialog',
@@ -109,6 +127,16 @@ export interface DraftNode {
   question?: string;
   /** fault の step の答えと次の手順（`next` は同じ DM の step の id）。process の dialog では選択肢（`next` は使わない） */
   choices?: Array<{ text: string; next?: string }>;
+  /** person の人数（1 以上の整数。`personnel/@numRequired`） */
+  count?: number;
+  /** equipment / supply / spare の数量（`reqQuantity`。必須） */
+  quantity?: string;
+  /** 数量の単位（`reqQuantity/@unitOfMeasure`。値は解釈しない） */
+  unit?: string;
+  /** equipment / supply / spare の部品番号（`identNumber/partAndSerialNumber/partNumber`） */
+  partNumber?: string;
+  /** equipment / supply / spare の製造者のコード（`identNumber/manufacturerCode`。必須: 品目には識別子が要る） */
+  manufacturerCode?: string;
   applicRefId?: string;
   /** 要素自身の機密区分（値は解釈しない） */
   securityClassification?: string;

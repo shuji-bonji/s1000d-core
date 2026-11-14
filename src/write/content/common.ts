@@ -70,7 +70,7 @@ export const ALLOWED: Record<DraftKind, Partial<Record<Parent, readonly DraftNod
     listItem: ['para', 'admonition', 'list'],
     definition: ['para'],
     admonition: ['para'],
-    requirements: ['para', 'admonition'],
+    requirements: ['para', 'admonition', 'person', 'document', 'equipment', 'supply', 'spare'],
   },
   process: {
     body: ['sequence', 'section', 'if'],
@@ -88,7 +88,7 @@ export const ALLOWED: Record<DraftKind, Partial<Record<Parent, readonly DraftNod
     body: ['step', 'requirements', 'figure', 'table'],
     step: ['para', 'admonition', 'figure', 'table'],
     admonition: ['para'],
-    requirements: ['para', 'admonition'],
+    requirements: ['para', 'admonition', 'person', 'document', 'equipment', 'supply', 'spare'],
   },
   pm: {
     body: ['section', 'entry'],
@@ -108,6 +108,11 @@ const FIELDS: Record<DraftNodeKind, readonly (keyof DraftNode)[]> = {
   admonition: ['level', 'text', 'refs', 'children'],
   step: ['title', 'text', 'refs', 'children', 'question', 'choices'],
   requirements: ['text', 'children'],
+  person: ['text', 'count'],
+  document: ['title', 'text', 'refs'],
+  equipment: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
+  supply: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
+  spare: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
   sequence: ['children'],
   if: ['question', 'children'],
   dialog: ['title', 'text', 'choices'],
@@ -635,7 +640,7 @@ export class Writer {
 
   /**
    * reqCondGroup: 文があれば reqCondNoRef/reqCond に、無ければ noConds。
-   * 子の admonition（安全の要件）はここでは読まない（`reqSafety` が書く）
+   * 子のうち条件になるのは para だけ。admonition・person・document・equipment・supply・spare は preliminaryRqmts が書く
    */
   reqCondGroup(req?: { node: DraftNode; path: string }): Element {
     const group = this.el('reqCondGroup');
@@ -644,7 +649,7 @@ export class Writer {
       this.checkFields(req.node, req.path);
       if (req.node.text !== undefined) texts.push(req.node.text);
       this.childrenOf(req.node, 'requirements', req.path).forEach((c, i) => {
-        if (c.kind === 'admonition') return;
+        if (c.kind !== 'para') return;
         if (c.text === undefined) {
           throw new DraftInputError(`${req.path}/children[${i + 1}]`, 'a requirement needs text');
         }
@@ -693,38 +698,205 @@ export class Writer {
     return { element: e, count: found.length };
   }
 
+  /** requirements の子のうち、指定した種類のものを位置付きで返す */
+  private reqChildren(
+    req: { node: DraftNode; path: string } | undefined,
+    kind: DraftNodeKind,
+  ): Array<{ c: DraftNode; path: string }> {
+    return (req?.node.children ?? [])
+      .map((c, i) => ({ c, path: `${req!.path}/children[${i + 1}]` }))
+      .filter((x) => x.c.kind === kind);
+  }
+
+  /** reqPersons: person を personnel（`@numRequired` と trade）に書く。無ければ要素を置かない（XSD で任意） */
+  private reqPersons(req?: { node: DraftNode; path: string }): Element | undefined {
+    const found = this.reqChildren(req, 'person');
+    if (found.length === 0) return undefined;
+    const e = this.el('reqPersons');
+    for (const { c, path } of found) {
+      if (c.text === undefined && c.count === undefined) {
+        throw new DraftInputError(path, 'a "person" node needs text (the role) or count');
+      }
+      if (c.count !== undefined && !(Number.isInteger(c.count) && c.count >= 1)) {
+        throw new DraftInputError(`${path}/count`, 'count must be an integer of at least 1');
+      }
+      const p = this.common(
+        this.el('personnel', { numRequired: c.count === undefined ? undefined : String(c.count) }),
+        c,
+      );
+      if (c.text !== undefined) p.appendChild(this.textEl('trade', c.text));
+      e.appendChild(p);
+    }
+    return e;
+  }
+
   /**
-   * preliminaryRqmts。XSD は条件・支援機材・消耗品・予備品・安全の 5 つをすべて要求する。
-   * 入力は条件の文（text と子の para）と安全の要件（子の admonition）を受け取る。
-   * 支援機材・消耗品・予備品は受け取らないので「なし」の要素で埋め、notes に書く
+   * reqTechInfoGroup: document を reqTechInfo に書く。`refs` に dmRef / pmRef が 1 つあればその参照、
+   * 無ければ `title`（題名）と `text`（番号）から externalPubRef。無ければ要素を置かない（XSD で任意）
+   */
+  private reqTechInfoGroup(req?: { node: DraftNode; path: string }): Element | undefined {
+    const found = this.reqChildren(req, 'document');
+    if (found.length === 0) return undefined;
+    const e = this.el('reqTechInfoGroup');
+    for (const { c, path } of found) {
+      const info = this.el('reqTechInfo');
+      const refs = c.refs ?? [];
+      if (refs.length > 1) {
+        throw new DraftInputError(`${path}/refs`, 'a "document" node takes at most one ref');
+      }
+      if (refs.length === 1) {
+        const ref = refs[0];
+        if (ref.kind !== 'dmRef' && ref.kind !== 'pmRef') {
+          throw new DraftInputError(
+            `${path}/refs[1]`,
+            `a "document" node takes a dmRef or a pmRef, not ${ref.kind}`,
+          );
+        }
+        if (c.text !== undefined) {
+          throw new DraftInputError(
+            `${path}/text`,
+            'a "document" node with a ref takes no text (the document number is for a document outside the CSDB)',
+          );
+        }
+        info.appendChild(
+          this.inlineRef(
+            ref.title === undefined && c.title !== undefined ? { ...ref, title: c.title } : ref,
+            `${path}/refs[1]`,
+          ),
+        );
+      } else {
+        if (c.title === undefined && c.text === undefined) {
+          throw new DraftInputError(
+            path,
+            'a "document" node needs a ref, or title (the title of the document) or text (its number)',
+          );
+        }
+        const pub = this.el('externalPubRef');
+        const ident = this.el('externalPubRefIdent');
+        if (c.text !== undefined) ident.appendChild(this.textEl('externalPubCode', c.text));
+        if (c.title !== undefined) ident.appendChild(this.textEl('externalPubTitle', c.title));
+        pub.appendChild(ident);
+        info.appendChild(pub);
+      }
+      e.appendChild(info);
+    }
+    return e;
+  }
+
+  /**
+   * reqSupportEquips / reqSupplies / reqSpares: 品目を name・identNumber・reqQuantity（・remarks）に書く。無ければ「なし」の要素。
+   * XSD は品目に識別子を 1 つ以上と reqQuantity を要求する。値を補うことはしないので、
+   * `manufacturerCode`（identNumber に必須）か `quantity` が無い品目は DraftInputError にする
+   */
+  private reqItems(
+    req: { node: DraftNode; path: string } | undefined,
+    kind: 'equipment' | 'supply' | 'spare',
+  ): { element: Element; count: number } {
+    const names = {
+      equipment: [
+        'reqSupportEquips',
+        'noSupportEquips',
+        'supportEquipDescrGroup',
+        'supportEquipDescr',
+      ],
+      supply: ['reqSupplies', 'noSupplies', 'supplyDescrGroup', 'supplyDescr'],
+      spare: ['reqSpares', 'noSpares', 'spareDescrGroup', 'spareDescr'],
+    } as const;
+    const [outer, none, group, descr] = names[kind];
+    const e = this.el(outer);
+    const found = this.reqChildren(req, kind);
+    if (found.length === 0) {
+      e.appendChild(this.el(none));
+      return { element: e, count: 0 };
+    }
+    const g = this.el(group);
+    for (const { c, path } of found) {
+      if (c.manufacturerCode === undefined || c.manufacturerCode === '') {
+        throw new DraftInputError(
+          `${path}/manufacturerCode`,
+          `a "${kind}" node needs manufacturerCode (the schema requires an identifier for each item; none is made up here)`,
+        );
+      }
+      if (c.quantity === undefined || c.quantity === '') {
+        throw new DraftInputError(
+          `${path}/quantity`,
+          `a "${kind}" node needs quantity (the schema requires reqQuantity)`,
+        );
+      }
+      const d = this.common(this.el(descr), c);
+      if (c.title !== undefined) d.appendChild(this.textEl('name', c.title));
+      const ident = this.el('identNumber');
+      ident.appendChild(this.textEl('manufacturerCode', c.manufacturerCode));
+      if (c.partNumber !== undefined) {
+        const pn = this.el('partAndSerialNumber');
+        pn.appendChild(this.textEl('partNumber', c.partNumber));
+        ident.appendChild(pn);
+      }
+      d.appendChild(ident);
+      d.appendChild(this.textEl('reqQuantity', c.quantity, { unitOfMeasure: c.unit }));
+      if (c.text !== undefined) {
+        const remarks = this.el('remarks');
+        remarks.appendChild(this.textEl('simplePara', c.text));
+        d.appendChild(remarks);
+      }
+      g.appendChild(d);
+    }
+    e.appendChild(g);
+    return { element: e, count: found.length };
+  }
+
+  /**
+   * preliminaryRqmts。XSD は条件・支援機材・消耗品・予備品・安全の 5 つをすべて要求し、人員と参照する文書は任意。
+   * 入力の `requirements` は、条件の文（text と子の para）、人員（person）、文書（document）、
+   * 品目（equipment / supply / spare）、安全の要件（admonition）を受け取る。
+   * 入力に無い必須の区分は「なし」の要素で埋め、notes に書く
    */
   preliminaryRqmts(req?: { node: DraftNode; path: string }): Element {
     const e = this.el('preliminaryRqmts');
     e.appendChild(this.reqCondGroup(req));
-    const none = (outer: string, inner: string) => {
-      const o = this.el(outer);
-      o.appendChild(this.el(inner));
-      e.appendChild(o);
-    };
-    none('reqSupportEquips', 'noSupportEquips');
-    none('reqSupplies', 'noSupplies');
-    none('reqSpares', 'noSpares');
+    const persons = this.reqPersons(req);
+    if (persons) e.appendChild(persons);
+    const techInfo = this.reqTechInfoGroup(req);
+    if (techInfo) e.appendChild(techInfo);
+    const filled: string[] = [];
+    for (const [kind, none] of [
+      ['equipment', 'noSupportEquips'],
+      ['supply', 'noSupplies'],
+      ['spare', 'noSpares'],
+    ] as const) {
+      const r = this.reqItems(req, kind);
+      e.appendChild(r.element);
+      if (r.count === 0) filled.push(none);
+    }
     const safety = this.reqSafety(req);
     e.appendChild(safety.element);
-    this.notes.push(
-      safety.count > 0
-        ? 'preliminaryRqmts: the input cannot carry support equipment, supplies or spares, so noSupportEquips, noSupplies and noSpares were written (the schema requires these elements).'
-        : 'preliminaryRqmts: the input has no support equipment, supplies, spares or safety requirements, so noSupportEquips, noSupplies, noSpares and noSafety were written (the schema requires these elements). A procedure that has warnings or cautions for the whole task needs them as "admonition" children of the "requirements" node.',
-    );
+    if (safety.count === 0) filled.push('noSafety');
+    if (filled.length > 0) {
+      this.notes.push(
+        `preliminaryRqmts: the input has no ${filled
+          .map(
+            (f) =>
+              ({
+                noSupportEquips: 'support equipment ("equipment" nodes)',
+                noSupplies: 'supplies ("supply" nodes)',
+                noSpares: 'spares ("spare" nodes)',
+                noSafety: 'safety requirements ("admonition" nodes)',
+              })[f],
+          )
+          .join(
+            ', ',
+          )} in the "requirements" node, so ${filled.join(', ')} ${filled.length > 1 ? 'were' : 'was'} written (the schema requires these elements).`,
+      );
+    }
     return e;
   }
 
   closeRqmts(req?: { node: DraftNode; path: string }): Element {
     (req?.node.children ?? []).forEach((c, i) => {
-      if (c.kind === 'admonition') {
+      if (c.kind !== 'para') {
         throw new DraftInputError(
           `${req!.path}/children[${i + 1}]`,
-          'an "admonition" node is accepted only in the "requirements" node before the main procedure (closeRqmts has no safety requirements)',
+          `a "${c.kind}" node is accepted only in the "requirements" node before the main procedure (closeRqmts takes conditions only)`,
         );
       }
     });

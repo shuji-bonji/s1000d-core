@@ -51,8 +51,8 @@ describe('measureContent / outlineContent', () => {
     const c = readContentFromXml(PROCED);
     const size = measureContent(c.blocks);
     expect(size.nodes).toBe(c.blocks.length > 0 ? size.nodes : 0);
-    // preliminaryRqmts の reqSafety の warning は requirements の要約に入り、admonition の節点にはならない
-    expect(size.admonitions).toEqual({ warning: 0, caution: 1, note: 1 });
+    // preliminaryRqmts の reqSafety の warning は、requirements の子の admonition として数に入る
+    expect(size.admonitions).toEqual({ warning: 1, caution: 1, note: 1 });
     expect(size.byKind.step).toBe(4);
     expect(size.byKind.table).toBe(1);
     expect(size.chars).toBeGreaterThan(0);

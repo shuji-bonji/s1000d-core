@@ -918,6 +918,74 @@ describe('入力の形の検査（DraftInputError）', () => {
     ]);
   });
 
+  it('人員の適用性は reqPersons にまとめ、参照は版・言語・場所・適用性を書く', () => {
+    const xml = serialize(
+      buildContent('proced', [
+        {
+          kind: 'requirements',
+          children: [
+            { kind: 'person', text: '係員', applicRefId: 'app-1', id: 'per-1' },
+            { kind: 'person', text: '補助者', applicRefId: 'app-1' },
+            { kind: 'person', text: '監督者' },
+            { kind: 'person', text: '係員', applicRefId: 'app-1' },
+            {
+              kind: 'para',
+              text: '電源を切ってあること',
+              refs: [
+                {
+                  kind: 'dmRef',
+                  target: 'KENBAIKI-A-10-20-00-00A-520A-D',
+                  title: '指定席券売機',
+                  infoName: '電源を切る',
+                  issueInfo: { issueNumber: '002', inWork: '00' },
+                  language: { languageIsoCode: 'ja', countryIsoCode: 'JP' },
+                  fragment: 'stp-0003',
+                  applicRefId: 'app-1',
+                },
+              ],
+            },
+          ],
+        },
+        { kind: 'step', text: 'x' },
+      ]),
+    );
+    // personnel / person には applicRefId が無い（XSD）。同じ applicRefId が続く人員を 1 つの reqPersons にまとめる
+    expect(xml).toContain(
+      '<reqPersons applicRefId="app-1"><personnel id="per-1"><trade>係員</trade></personnel><personnel><trade>補助者</trade></personnel></reqPersons>' +
+        '<reqPersons><personnel><trade>監督者</trade></personnel></reqPersons>' +
+        '<reqPersons applicRefId="app-1"><personnel><trade>係員</trade></personnel></reqPersons>',
+    );
+    expect(xml).not.toMatch(/<personnel[^>]*applicRefId/);
+    expect(xml.replace(/<dmCode [^>]*\/>/, '<dmCode/>')).toContain(
+      '<reqCondDm><reqCond>電源を切ってあること</reqCond>' +
+        '<dmRef referredFragment="stp-0003" applicRefId="app-1"><dmRefIdent><dmCode/><issueInfo issueNumber="002" inWork="00"/><language languageIsoCode="ja" countryIsoCode="JP"/></dmRefIdent>' +
+        '<dmRefAddressItems><dmTitle><techName>指定席券売機</techName><infoName>電源を切る</infoName></dmTitle></dmRefAddressItems></dmRef></reqCondDm>',
+    );
+    // 読み戻すと、人員に適用性が、参照に版・言語・場所・適用性が返る
+    const pre = readContentFromXml(
+      `<dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_7/xml_schema_flat/proced.xsd">${xml}</dmodule>`,
+    ).blocks[0];
+    expect(pre.children.filter((n) => n.kind === 'person').map((n) => n.applicRefId)).toEqual([
+      'app-1',
+      'app-1',
+      undefined,
+      'app-1',
+    ]);
+    expect(pre.children[0].refs).toEqual([
+      {
+        kind: 'dmRef',
+        target: 'KENBAIKI-A-10-20-00-00A-520A-D',
+        title: '指定席券売機 - 電源を切る',
+        techName: '指定席券売機',
+        infoName: '電源を切る',
+        issueInfo: { issueNumber: '002', inWork: '00' },
+        language: { languageIsoCode: 'ja', countryIsoCode: 'JP' },
+        fragment: 'stp-0003',
+        applicRefId: 'app-1',
+      },
+    ]);
+  });
+
   it('品目は識別子と数量が要る（値は補わない）。人員・文書・事後条件の形も確かめる', () => {
     const req = (child: DraftNode) =>
       fail(() =>

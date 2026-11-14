@@ -8,9 +8,9 @@
  */
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { readContentFromXml } from '../content/index.js';
-import type { ContentNode } from '../content/types.js';
+import type { ContentNode, ContentRef } from '../content/types.js';
 import { buildContent } from '../write/content/index.js';
-import type { DraftNode } from '../write/types.js';
+import type { DraftNode, DraftRef } from '../write/types.js';
 
 export interface RequirementsRoundTrip {
   /** 元の preliminaryRqmts の要素（`name`）と属性（`name/@attr`）の数 */
@@ -44,9 +44,26 @@ function inventory(xml: string): Record<string, number> {
 
 const fragment = (xml: string) => /<preliminaryRqmts[\s\S]*?<\/preliminaryRqmts>/.exec(xml)?.[0];
 
+/** reader の参照（dmRef / pmRef）を下書きの参照に写す */
+function toDraftRef(r: ContentRef): DraftRef {
+  return {
+    kind: r.kind as 'dmRef' | 'pmRef',
+    target: r.target,
+    ...(r.kind === 'dmRef' && r.techName !== undefined
+      ? { title: r.techName, ...(r.infoName !== undefined ? { infoName: r.infoName } : {}) }
+      : r.kind === 'pmRef' && r.title !== undefined
+        ? { title: r.title }
+        : {}),
+    ...(r.issueInfo ? { issueInfo: r.issueInfo } : {}),
+    ...(r.language ? { language: r.language } : {}),
+    ...(r.fragment ? { fragment: r.fragment } : {}),
+    ...(r.applicRefId ? { applicRefId: r.applicRefId } : {}),
+  };
+}
+
 /** reader の節点を下書きに写す。写せないものは undefined と理由 */
 function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
-  const id = n.id ? { id: n.id } : {};
+  const id: { id?: string; applicRefId?: string } = n.id ? { id: n.id } : {};
   switch (n.kind) {
     case 'para': {
       if (!n.text) return { reason: 'para without text' };
@@ -55,7 +72,7 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
       const text = n.text.replace(/\s*\[→ [^\]]*\]\s*/g, ' ').trim() || n.text;
       if (r && (r.kind === 'dmRef' || r.kind === 'pmRef') && n.element !== 'reqCondNoRef')
         return {
-          node: { kind: 'para', ...id, text, refs: [{ kind: r.kind, target: r.target }] },
+          node: { kind: 'para', ...id, text, refs: [toDraftRef(r)] },
         };
       return { node: { kind: 'para', ...id, text: n.text } };
     }
@@ -63,6 +80,7 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
       return {
         node: {
           kind: 'person',
+          ...(n.applicRefId !== undefined ? { applicRefId: n.applicRefId } : {}),
           ...(n.text !== undefined ? { text: n.text } : {}),
           ...(n.count !== undefined && n.man === undefined ? { count: n.count } : {}),
           ...(n.man !== undefined ? { man: n.man } : {}),
@@ -84,7 +102,7 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
           node: {
             kind: 'document',
             ...category,
-            refs: [{ kind: r.kind, target: r.target, title: r.title }],
+            refs: [toDraftRef(r)],
           },
         };
       if (n.title !== undefined || n.text !== undefined)
@@ -101,6 +119,7 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
     case 'equipment':
     case 'supply':
     case 'spare':
+      if (n.applicRefId !== undefined) Object.assign(id, { applicRefId: n.applicRefId });
       if (!n.manufacturerCode) return { reason: `${n.kind} without identNumber/manufacturerCode` };
       if (!n.quantity) return { reason: `${n.kind} without reqQuantity text` };
       return {
@@ -121,7 +140,15 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
         .filter((c) => c.kind === 'para' && c.text)
         .map((c) => ({ kind: 'para' as const, text: c.text! }));
       if (!n.level || paras.length === 0) return { reason: 'admonition without text' };
-      return { node: { kind: 'admonition', ...id, level: n.level, children: paras } };
+      return {
+        node: {
+          kind: 'admonition',
+          ...id,
+          ...(n.applicRefId !== undefined ? { applicRefId: n.applicRefId } : {}),
+          level: n.level,
+          children: paras,
+        },
+      };
     }
     default:
       return { reason: `kind ${n.kind}` };
@@ -250,5 +277,88 @@ export function findSilentlyDroppedElements(xml: string): string[] {
     for (const c of Array.from(n.childNodes)) walk(c as never);
   };
   walk(doc.documentElement as never);
+  return [...dropped].sort();
+}
+
+/**
+ * reader が読んでいる属性（要素名 → 属性名）。`id`・`applicRefId`・`securityClassification` は節点に写るものだけを書く
+ */
+const READ_ATTRIBUTES: Record<string, string[]> = {
+  reqCondNoRef: ['id', 'applicRefId', 'securityClassification'],
+  reqCondDm: ['id', 'applicRefId', 'securityClassification'],
+  reqCondPm: ['id', 'applicRefId', 'securityClassification'],
+  reqCondExternalPub: ['id', 'applicRefId', 'securityClassification'],
+  reqCondCircuitBreaker: ['id', 'applicRefId', 'securityClassification'],
+  reqCond: ['reqCondCategory'],
+  reqPersons: ['applicRefId'],
+  personnel: ['id', 'numRequired', 'securityClassification'],
+  person: ['id', 'man', 'securityClassification'],
+  personCategory: ['personCategoryCode'],
+  personSkill: ['skillLevelCode'],
+  estimatedTime: ['unitOfMeasure'],
+  reqTechInfo: ['reqTechInfoCategory'],
+  supportEquipDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage'],
+  supplyDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage', 'supplyCategory'],
+  spareDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage'],
+  reqQuantity: ['unitOfMeasure'],
+  safetyRqmts: ['warningRefs', 'cautionRefs'],
+  warning: ['id', 'applicRefId', 'securityClassification'],
+  caution: ['id', 'applicRefId', 'securityClassification'],
+  note: ['id', 'applicRefId', 'securityClassification'],
+  dmRef: ['applicRefId', 'referredFragment'],
+  pmRef: ['applicRefId'],
+  dmCode: [
+    'modelIdentCode',
+    'systemDiffCode',
+    'systemCode',
+    'subSystemCode',
+    'subSubSystemCode',
+    'assyCode',
+    'disassyCode',
+    'disassyCodeVariant',
+    'infoCode',
+    'infoCodeVariant',
+    'itemLocationCode',
+    'learnCode',
+    'learnEventCode',
+  ],
+  pmCode: ['modelIdentCode', 'pmIssuer', 'pmNumber', 'pmVolume'],
+  issueInfo: ['issueNumber', 'inWork'],
+  language: ['languageIsoCode', 'countryIsoCode'],
+};
+
+/** 参照の中で、子まで調べる要素（属性を読んでいるので、落としていないかを確かめる） */
+const REF_STRUCTURE = new Set(['dmRef', 'pmRef', 'dmRefIdent', 'pmRefIdent', 'reqTechInfo']);
+
+/**
+ * preliminaryRqmts の中の属性のうち、reader が読んでおらず、読んでいないことも知らせていないものを
+ * `要素/@属性` の形で返す。調べるのは、reader が構造として読む要素と、参照（dmRef / pmRef）の中。
+ * 文として読む要素（reqCond・警告の本文など）の中と、知らせた要素（notReadElements）の中は調べない
+ */
+export function findSilentlyDroppedAttributes(xml: string): string[] {
+  const source = fragment(xml);
+  if (!source) return [];
+  const content = readContentFromXml(xml);
+  if (!content.blocks.some((b) => b.kind === 'requirements' && b.element === 'preliminaryRqmts'))
+    return [];
+  const reported = new Set(Object.keys(content.notReadElements));
+  const dropped = new Set<string>();
+  const doc = new DOMParser().parseFromString(source, 'text/xml');
+  type El = { nodeType: number; nodeName: string; childNodes: ArrayLike<unknown> };
+  const walk = (n: El) => {
+    if (n.nodeType !== 1 || reported.has(n.nodeName)) return;
+    const e = n as unknown as { nodeName: string; attributes: ArrayLike<{ name: string }> };
+    const read = READ_ATTRIBUTES[e.nodeName] ?? [];
+    for (const a of Array.from(e.attributes))
+      if (!read.includes(a.name)) dropped.add(`${e.nodeName}/@${a.name}`);
+    const descend =
+      READ_ELEMENTS.has(n.nodeName) ||
+      REF_STRUCTURE.has(n.nodeName) ||
+      ['reqCondDm', 'reqCondPm'].includes(n.nodeName);
+    if (!descend && READ_SUBTREES.has(n.nodeName)) return;
+    if (!descend && !READ_ELEMENTS.has(n.nodeName)) return;
+    for (const c of Array.from(n.childNodes)) walk(c as El);
+  };
+  walk(doc.documentElement as El);
   return [...dropped].sort();
 }

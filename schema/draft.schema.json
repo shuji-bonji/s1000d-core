@@ -255,6 +255,52 @@
           "type": "string",
           "description": "dmRef / pmRef では参照先の題名、internalRef では表示する文字"
         },
+        "infoName": {
+          "type": "string",
+          "description": "dmRef の題名の infoName（title が要る）"
+        },
+        "issueInfo": {
+          "type": "object",
+          "properties": {
+            "issueNumber": {
+              "type": "string"
+            },
+            "inWork": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issueNumber",
+            "inWork"
+          ],
+          "additionalProperties": false,
+          "description": "dmRef / pmRef が指す版。省略すると版を指定しない参照"
+        },
+        "language": {
+          "type": "object",
+          "properties": {
+            "languageIsoCode": {
+              "type": "string"
+            },
+            "countryIsoCode": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "languageIsoCode",
+            "countryIsoCode"
+          ],
+          "additionalProperties": false,
+          "description": "dmRef / pmRef が指す言語"
+        },
+        "fragment": {
+          "type": "string",
+          "description": "dmRef が指す DM の中の場所（referredFragment）"
+        },
+        "applicRefId": {
+          "type": "string",
+          "description": "dmRef / pmRef 自身の applicRefId"
+        },
         "multimediaType": {
           "enum": [
             "3D",

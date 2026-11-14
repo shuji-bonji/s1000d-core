@@ -20,11 +20,14 @@
   - 見つからない id は、`attrs.unresolved` を付けた `admonition` として返します（黙って落としません）。
   - `requirements` の要約には「safety: warning ref w001 (参照先)」の形で入ります。
 - `readContent` は、`preliminaryRqmts` / `closeRqmts` の条件を、`requirements` の子の `para` としても返します（`reqCondDm` などの参照は `refs` に入ります。これまでは要約の文にだけ入り、参照は落ちていました）。要約の「persons:」には `personnel`（`@numRequired`）も入ります。
-- 配布物のテストに、Bike Samples の `preliminaryRqmts` を「読んで、書いて、失われる要素・属性を数える」テストを足しました（`src/content/requirements.spec.test.ts`）。41 件の DM の要素・属性 2,527 個のうち、最初の実測では 898 個が失われ、下の人員・文書・条件の項目を足した後は 631 個です（何も失わずに往復できる DM は 3 件 → 26 件）。この数を上限として固定し、減らす方向にだけ動かします。
+- 配布物のテストに、Bike Samples の `preliminaryRqmts` を「読んで、書いて、失われる要素・属性を数える」テストを足しました（`src/content/requirements.spec.test.ts`）。41 件の DM の要素・属性 2,527 個のうち、最初の実測では 898 個が失われ、下の人員・文書・条件・参照の項目を足した後は 602 個です（何も失わずに往復できる DM は 3 件 → 26 件）。この数を上限として固定し、減らす方向にだけ動かします。
 - 下書きと読み取りの `person` に、`man`（あれば `person` 要素、無ければ `personnel`）・`personCategoryCode`・`skillLevelCode`・`estimatedTime`・`estimatedTimeUnit` を足しました。中身の無い `personnel` も書けます。`man` と `count` は一緒に使えません（`person` 要素に人数の属性が無いため）。
 - 下書きと読み取りの `document` に `reqTechInfoCategory` を足しました。
+- 人員の適用性を `reqPersons/@applicRefId` として読み書きします。XSD では `personnel` / `person` に `applicRefId` が無く、`reqPersons` に付きます。読む側は `reqPersons` の値を人員の節点の `applicRefId` に写し、書く側は同じ `applicRefId` が続く人員を 1 つの `reqPersons` にまとめます。これまで、読む側はこの属性を返さず、書く側は `personnel` に `applicRefId` を書いていました（XSD に通らない XML になる誤りで、未公開のうちに直しました）。
+- 参照（`dmRef` / `pmRef`）に、指す版（`issueInfo`）・言語（`language`）・参照自身の `applicRefId` を足しました。`dmRef` には、行き先の DM の中の場所（`fragment` = `@referredFragment`）と、題名の内訳（読む側は `techName`・`infoName`、書く側は `title`・`infoName`）も足しました。読む側（`ContentRef`）と書く側（`DraftRef`）の両方です。これまで、読む側は行き先と題名だけを返していました。
+- `readContent` は、条件の区分（`reqCond/@reqCondCategory`）を `attrs.reqCondCategory` に読みます。参照の中の読んでいない要素（`behavior`、外部の文書の発行情報、`identExtension`）も `notReadElements` で知らせます。
 - 下書きの条件（`requirements` の子の `para`）が、参照を 1 つ受け取ります。`dmRef` は `reqCondDm`、`pmRef` は `reqCondPm` として書きます（`closeRqmts` でも同じ）。
-- `readContent` は、あることは分かっているが中身を読んでいない要素を知らせます。`DataModuleContent.notReadElements`（名前 → 数）と `notes` に入り、該当する節点には `attrs.notRead` が付きます。対象は `productionMaintData`、品目の `identNumber` 以外の識別子（`toolRef`・`partRef`・`supplyRef` など）、入れ子の品目（`embedded…Descr`）、`hazards`、脚注、回路遮断器の一覧です。品目の `shortName`・`@materialUsage`・`@supplyCategory` は `attrs` に読みます。配布物のテストで、Bike Samples の `preliminaryRqmts` に、読まずに黙って落としている要素が無いことを確かめます。
+- `readContent` は、あることは分かっているが中身を読んでいない要素を知らせます。`DataModuleContent.notReadElements`（名前 → 数）と `notes` に入り、該当する節点には `attrs.notRead` が付きます。対象は `productionMaintData`、品目の `identNumber` 以外の識別子（`toolRef`・`partRef`・`supplyRef` など）、入れ子の品目（`embedded…Descr`）、`hazards`、脚注、回路遮断器の一覧です。品目の `shortName`・`@materialUsage`・`@supplyCategory` は `attrs` に読みます。配布物のテストで、Bike Samples の `preliminaryRqmts` に、読まずに黙って落としている要素と属性（構造として読む要素と、参照の中）が無いことを確かめます。
 
 ### 変更（数え方が変わります）
 

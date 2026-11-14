@@ -9,6 +9,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  findSilentlyDroppedAttributes,
   findSilentlyDroppedElements,
   measureRequirementsRoundTrip,
 } from '../__fixtures__/requirements-roundtrip.js';
@@ -32,6 +33,7 @@ function findBikeDir(dir: string): string | undefined {
  * 2026-11-15 の実測。
  * - 最初（`requirements` の子に person・document・equipment・supply・spare・admonition を足した時点）: 失われた数 898、失わずに往復できた DM 3 件
  * - 人員の `man`・区分・技能・見積もり時間、文書の区分、条件の参照（reqCondDm / reqCondPm）を足した後: 631、26 件
+ * - 人員の適用性（reqPersons/@applicRefId）と、参照の版・言語・場所・適用性を足した後: 602、26 件
  */
 const BASELINE = {
   /** preliminaryRqmts を持つ DM */
@@ -41,7 +43,7 @@ const BASELINE = {
   /** 要素と属性の数（元） */
   originalTotal: 2527,
   /** 往復で失われた要素と属性の数の上限 */
-  lostTotal: 631,
+  lostTotal: 602,
   /** 何も失わずに往復できた DM の数の下限 */
   clean: 26,
 };
@@ -102,6 +104,16 @@ describe.skipIf(!enabled || !bikeDir)('preliminaryRqmts の往復（Bike Samples
     const silent: Record<string, string[]> = {};
     for (const f of files) {
       const dropped = findSilentlyDroppedElements(readFileSync(join(bikeDir!, f), 'utf8'));
+      if (dropped.length > 0) silent[f] = dropped;
+    }
+    expect(silent).toEqual({});
+  });
+
+  it('reader は、構造として読む要素と参照の属性を黙って落とさない', () => {
+    const files = readdirSync(bikeDir!).filter((f) => /^DMC-.*\.XML$/i.test(f));
+    const silent: Record<string, string[]> = {};
+    for (const f of files) {
+      const dropped = findSilentlyDroppedAttributes(readFileSync(join(bikeDir!, f), 'utf8'));
       if (dropped.length > 0) silent[f] = dropped;
     }
     expect(silent).toEqual({});

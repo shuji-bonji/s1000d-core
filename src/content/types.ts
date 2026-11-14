@@ -7,6 +7,8 @@
  */
 import type { NodeLocation } from '../brex/types.js';
 
+import type { IssueInfo, Language } from '../types.js';
+
 export type ContentNodeKind =
   /** levelledPara / pmEntry / dmNode など、題名を持つまとまり */
   | 'section'
@@ -49,8 +51,19 @@ export interface ContentRef {
   kind: 'dmRef' | 'pmRef' | 'internalRef' | 'externalPubRef' | 'graphic' | 'multimedia';
   /** DMC・PMC・id・実体名・外部文書の識別 */
   target: string;
-  /** dmRefAddressItems/dmTitle などから得た題名 */
+  /** dmRefAddressItems/dmTitle などから得た題名（dmRef は「techName - infoName」） */
   title?: string;
+  /** dmRef の題名の内訳（`dmTitle/techName`・`infoName`） */
+  techName?: string;
+  infoName?: string;
+  /** dmRef / pmRef が指す版（`dmRefIdent/issueInfo`）。無ければ版を指定していない参照 */
+  issueInfo?: IssueInfo;
+  /** dmRef / pmRef が指す言語（`dmRefIdent/language`） */
+  language?: Language;
+  /** dmRef が指す DM の中の場所（`@referredFragment`。行き先の DM の中の id） */
+  fragment?: string;
+  /** 参照自身の `@applicRefId` */
+  applicRefId?: string;
   /** internalRef の `@internalRefTargetType`、graphic の hotspot など */
   note?: string;
 }

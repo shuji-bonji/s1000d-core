@@ -223,6 +223,25 @@ class Reader {
   private markNotRead(name: string): void {
     this.notRead[name] = (this.notRead[name] ?? 0) + 1;
   }
+
+  /** 参照（dmRef など）の子のうち、読んでいる要素（`read`）以外を「読んでいない」として数える */
+  private markRefNotRead(el: Element, read: string[]): void {
+    for (const c of elements(el)) if (!read.includes(c.nodeName)) this.markNotRead(c.nodeName);
+  }
+
+  /** dmRefIdent / pmRefIdent の issueInfo と language を参照に写す。identExtension は読んでいない */
+  private refIdentTail(ref: ContentRef, ident: Element | undefined): void {
+    if (!ident) return;
+    const issue = firstChild(ident, 'issueInfo');
+    const issueNumber = issue ? attr(issue, 'issueNumber') : undefined;
+    const inWork = issue ? attr(issue, 'inWork') : undefined;
+    if (issueNumber && inWork) ref.issueInfo = { issueNumber, inWork };
+    const lang = firstChild(ident, 'language');
+    const languageIsoCode = lang ? attr(lang, 'languageIsoCode') : undefined;
+    const countryIsoCode = lang ? attr(lang, 'countryIsoCode') : undefined;
+    if (languageIsoCode && countryIsoCode) ref.language = { languageIsoCode, countryIsoCode };
+    if (firstChild(ident, 'identExtension')) this.markNotRead('identExtension');
+  }
   constructor(private readonly engine: XmlEngine) {}
 
   private refOf(el: Element): ContentRef | undefined {
@@ -237,7 +256,20 @@ class Reader {
             .filter(Boolean)
             .map((s) => norm(s!))
             .join(' - ') || undefined;
-        return { kind: 'dmRef', target: dm?.ok ? formatDmc(dm.value) : '(invalid dmCode)', title };
+        const ref: ContentRef = {
+          kind: 'dmRef',
+          target: dm?.ok ? formatDmc(dm.value) : '(invalid dmCode)',
+          title,
+        };
+        if (tech) ref.techName = norm(tech);
+        if (info) ref.infoName = norm(info);
+        this.refIdentTail(ref, firstChild(el, 'dmRefIdent'));
+        const fragment = attr(el, 'referredFragment');
+        if (fragment) ref.fragment = fragment;
+        const applic = attr(el, 'applicRefId');
+        if (applic) ref.applicRefId = applic;
+        this.markRefNotRead(el, ['dmRefIdent', 'dmRefAddressItems']);
+        return ref;
       }
       case 'pmRef': {
         const code = this.engine.selectNodes('pmRefIdent/pmCode', el)[0] as Element | undefined;
@@ -250,7 +282,12 @@ class Reader {
             ].join('-')
           : '(no pmCode)';
         const title = this.engine.selectString('pmRefAddressItems/pmTitle', el);
-        return { kind: 'pmRef', target, title: title ? norm(title) : undefined };
+        const ref: ContentRef = { kind: 'pmRef', target, title: title ? norm(title) : undefined };
+        this.refIdentTail(ref, firstChild(el, 'pmRefIdent'));
+        const applic = attr(el, 'applicRefId');
+        if (applic) ref.applicRefId = applic;
+        this.markRefNotRead(el, ['pmRefIdent', 'pmRefAddressItems']);
+        return ref;
       }
       case 'internalRef':
         return {
@@ -261,6 +298,13 @@ class Reader {
       case 'externalPubRef': {
         const code = this.engine.selectString('externalPubRefIdent/externalPubCode', el);
         const title = this.engine.selectString('externalPubRefIdent/externalPubTitle', el);
+        // 題名と番号だけを読む。発行情報（externalPubIssueInfo）などは読んでいない
+        this.markRefNotRead(el, ['externalPubRefIdent']);
+        const ident = firstChild(el, 'externalPubRefIdent');
+        if (ident)
+          for (const c of elements(ident))
+            if (c.nodeName !== 'externalPubCode' && c.nodeName !== 'externalPubTitle')
+              this.markNotRead(c.nodeName);
         return {
           kind: 'externalPubRef',
           target: norm(code ?? title ?? ''),
@@ -595,6 +639,8 @@ class Reader {
       const condRefs: ContentRef[] = [];
       const reqCond = firstChild(cond, 'reqCond');
       if (reqCond) n.text = this.inlineText(reqCond, condRefs);
+      const category = reqCond ? attr(reqCond, 'reqCondCategory') : undefined;
+      if (category) n.attrs = { ...(n.attrs ?? {}), reqCondCategory: category };
       for (const c of elements(cond)) {
         if (c.nodeName === 'reqCond') continue;
         const r = this.refOf(c);
@@ -603,7 +649,7 @@ class Reader {
       if (condRefs.length > 0) n.refs = condRefs;
       if (cond.nodeName === 'reqCondCircuitBreaker') {
         // 回路遮断器の条件は、文と参照以外（遮断器の一覧・操作）を読んでいない
-        n.attrs = { notRead: 'circuitBreakerDescrGroup' };
+        n.attrs = { ...(n.attrs ?? {}), notRead: 'circuitBreakerDescrGroup' };
         this.markNotRead('circuitBreakerDescrGroup');
       }
       out.push(n);
@@ -618,6 +664,10 @@ class Reader {
       if (trade) n.text = trade;
       const num = attr(p, 'numRequired');
       if (num && /^\d+$/.test(num)) n.count = Number(num);
+      // 適用性は reqPersons に付く（personnel / person には属性が無い）ので、人員の節点に写す
+      const group = p.parentNode as Element | null;
+      const groupApplic = group ? attr(group, 'applicRefId') : undefined;
+      if (groupApplic) n.applicRefId = groupApplic;
       const man = attr(p, 'man');
       if (man) n.man = man;
       const category = str('personCategory/@personCategoryCode', p);

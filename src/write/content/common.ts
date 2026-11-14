@@ -247,24 +247,50 @@ export class Writer {
   private dmRefEl(ref: DraftRef, path: string): Element {
     const dm = parseDmc(ref.target);
     if (!dm.ok) throw new DraftInputError(path, `dmRef target is not a DMC: ${dm.error}`);
-    const e = this.el('dmRef');
+    if (ref.infoName !== undefined && ref.title === undefined) {
+      throw new DraftInputError(`${path}/infoName`, 'infoName needs title (the techName)');
+    }
+    const e = this.el('dmRef', { referredFragment: ref.fragment, applicRefId: ref.applicRefId });
     const ident = this.el('dmRefIdent');
     ident.appendChild(this.dmCodeEl(dm.value));
+    this.refIdentTail(ident, ref);
     e.appendChild(ident);
     if (ref.title !== undefined) {
       const items = this.el('dmRefAddressItems');
       const title = this.el('dmTitle');
       title.appendChild(this.textEl('techName', ref.title));
+      if (ref.infoName !== undefined) title.appendChild(this.textEl('infoName', ref.infoName));
       items.appendChild(title);
       e.appendChild(items);
     }
     return e;
   }
 
+  /** dmRefIdent / pmRefIdent の、コードの後ろ（issueInfo → language。XSD の順） */
+  private refIdentTail(ident: Element, ref: DraftRef): void {
+    if (ref.issueInfo !== undefined)
+      ident.appendChild(
+        this.el('issueInfo', {
+          issueNumber: ref.issueInfo.issueNumber,
+          inWork: ref.issueInfo.inWork,
+        }),
+      );
+    if (ref.language !== undefined)
+      ident.appendChild(
+        this.el('language', {
+          languageIsoCode: ref.language.languageIsoCode,
+          countryIsoCode: ref.language.countryIsoCode,
+        }),
+      );
+  }
+
   private pmRefEl(ref: DraftRef, path: string): Element {
     const pm = parsePmc(ref.target);
     if (!pm.ok) throw new DraftInputError(path, `pmRef target is not a PMC: ${pm.error}`);
-    const e = this.el('pmRef');
+    if (ref.fragment !== undefined || ref.infoName !== undefined) {
+      throw new DraftInputError(path, 'fragment and infoName are accepted only on a dmRef');
+    }
+    const e = this.el('pmRef', { applicRefId: ref.applicRefId });
     const ident = this.el('pmRefIdent');
     ident.appendChild(
       this.el('pmCode', {
@@ -274,6 +300,7 @@ export class Writer {
         pmVolume: pm.value.pmVolume,
       }),
     );
+    this.refIdentTail(ident, ref);
     e.appendChild(ident);
     if (ref.title !== undefined) {
       const items = this.el('pmRefAddressItems');
@@ -739,11 +766,22 @@ export class Writer {
    * （personCategory → personSkill → trade → estimatedTime）。中身の無い personnel も書く（XSD で許される）。
    * 無ければ要素を置かない（XSD で任意）
    */
-  private reqPersons(req?: { node: DraftNode; path: string }): Element | undefined {
+  private reqPersons(req?: { node: DraftNode; path: string }): Element[] {
     const found = this.reqChildren(req, 'person');
-    if (found.length === 0) return undefined;
-    const e = this.el('reqPersons');
+    if (found.length === 0) return [];
+    // 適用性（applicRefId）は reqPersons に付く（personnel / person には属性が無い）。
+    // 並びの順に、同じ applicRefId が続く人員を 1 つの reqPersons にまとめる
+    const groups: Element[] = [];
+    let current: { applicRefId: string | undefined; e: Element } | undefined;
     for (const { c, path } of found) {
+      if (!current || current.applicRefId !== c.applicRefId) {
+        current = {
+          applicRefId: c.applicRefId,
+          e: this.el('reqPersons', { applicRefId: c.applicRefId }),
+        };
+        groups.push(current.e);
+      }
+      const e = current.e;
       if (c.count !== undefined && !(Number.isInteger(c.count) && c.count >= 1)) {
         throw new DraftInputError(`${path}/count`, 'count must be an integer of at least 1');
       }
@@ -763,14 +801,15 @@ export class Writer {
       if (c.estimatedTime === undefined && c.estimatedTimeUnit !== undefined) {
         throw new DraftInputError(`${path}/estimatedTime`, 'estimatedTimeUnit needs estimatedTime');
       }
-      const p = this.common(
+      const p =
         c.man !== undefined
           ? this.el('person', { man: c.man })
           : this.el('personnel', {
               numRequired: c.count === undefined ? undefined : String(c.count),
-            }),
-        c,
-      );
+            });
+      if (c.id !== undefined) p.setAttribute('id', c.id);
+      if (c.securityClassification !== undefined)
+        p.setAttribute('securityClassification', c.securityClassification);
       if (c.personCategoryCode !== undefined)
         p.appendChild(this.el('personCategory', { personCategoryCode: c.personCategoryCode }));
       if (c.skillLevelCode !== undefined)
@@ -782,7 +821,7 @@ export class Writer {
         );
       e.appendChild(p);
     }
-    return e;
+    return groups;
   }
 
   /**
@@ -909,8 +948,7 @@ export class Writer {
   preliminaryRqmts(req?: { node: DraftNode; path: string }): Element {
     const e = this.el('preliminaryRqmts');
     e.appendChild(this.reqCondGroup(req));
-    const persons = this.reqPersons(req);
-    if (persons) e.appendChild(persons);
+    for (const persons of this.reqPersons(req)) e.appendChild(persons);
     const techInfo = this.reqTechInfoGroup(req);
     if (techInfo) e.appendChild(techInfo);
     const filled: string[] = [];

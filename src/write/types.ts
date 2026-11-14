@@ -107,6 +107,16 @@ export interface DraftRef {
   target: string;
   /** dmRef / pmRef では参照先の題名（dmRef は techName に入る）、internalRef では表示する文字 */
   title?: string;
+  /** dmRef の題名の infoName（`dmTitle/infoName`）。`title` が要る */
+  infoName?: string;
+  /** dmRef / pmRef が指す版（`dmRefIdent/issueInfo`）。省略すると版を指定しない参照 */
+  issueInfo?: IssueInfo;
+  /** dmRef / pmRef が指す言語（`dmRefIdent/language`） */
+  language?: Language;
+  /** dmRef が指す DM の中の場所（`@referredFragment`。行き先の DM の中の id。あるかどうかは確かめない） */
+  fragment?: string;
+  /** dmRef / pmRef 自身の `@applicRefId` */
+  applicRefId?: string;
   /**
    * multimedia の種類（`multimediaObject/@multimediaType`）。省略すると 'other'。
    * 形式の判断はしないので、動画・音声・3D と分かっているときは呼び出し側が書く

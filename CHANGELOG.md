@@ -15,6 +15,12 @@
   - `equipment`・`supply`・`spare` → `supportEquipDescr`・`supplyDescr`・`spareDescr`（`title` が `name`、`manufacturerCode` と `partNumber` が `identNumber`、`quantity` と `unit` が `reqQuantity`、`text` が `remarks`）。XSD は品目に識別子と `reqQuantity` を要求します。値を補うことはしないので、`manufacturerCode` か `quantity` が無い品目は `DraftInputError` です。
   - 入力に無い必須の区分（支援機材・消耗品・予備品・安全）は、これまでどおり「なし」の要素で埋め、どれを埋めたかを `notes` に書きます。
 - `readContent` は、`preliminaryRqmts` の人員・文書・品目・安全の要件を、`requirements` の子の節点として返します（種類と項目は下書きと同じ。`ContentNode` に `count`・`quantity`・`unit`・`partNumber`・`manufacturerCode` を足しました）。`requirements` の `text`（1 つの文にした要約）はこれまでどおりです。
+- `readContent` は、共通の警告・注意への参照（`@warningRefs` / `@cautionRefs`）を読みます。これまでは読んでおらず、`safetyRqmts` が参照だけを持つ DM では、`requirements` の要約に安全の要件が何も出ませんでした（`safety: none` も出ない）。手順（`proceduralStep` など）の参照も同じでした。
+  - 参照先が同じ DM の `warningsAndCautions` の `warning` / `caution` なら本文を、`warningsAndCautionsRef` の `warningRef` / `cautionRef` なら別の DM への参照（`refs`）と識別番号（`attrs.identNumber`）を、`admonition` の節点として返します。どの節点にも `attrs.referencedId` を付けます。
+  - 見つからない id は、`attrs.unresolved` を付けた `admonition` として返します（黙って落としません）。
+  - `requirements` の要約には「safety: warning ref w001 (参照先)」の形で入ります。
+- `readContent` は、`preliminaryRqmts` / `closeRqmts` の条件を、`requirements` の子の `para` としても返します（`reqCondDm` などの参照は `refs` に入ります。これまでは要約の文にだけ入り、参照は落ちていました）。要約の「persons:」には `personnel`（`@numRequired`）も入ります。
+- 配布物のテストに、Bike Samples の `preliminaryRqmts` を「読んで、書いて、失われる要素・属性を数える」テストを足しました（`src/content/requirements.spec.test.ts`）。2026-11-15 の実測は、41 件の DM で要素・属性 2,527 個のうち 898 個が失われます。この数を上限として固定し、減らす方向にだけ動かします。
 
 ### 変更（数え方が変わります）
 

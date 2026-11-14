@@ -472,8 +472,60 @@ class Reader {
         }
       }
     }
+    // @warningRefs / @cautionRefs（共通の警告・注意への参照）は、参照先を admonition として先頭に置く。
+    // safetyRqmts の分は requirementsChildren が読む
+    if (kind !== 'requirements') {
+      const referenced = this.referencedAdmonitions(el);
+      if (referenced.length > 0) node.children = [...referenced, ...node.children];
+    }
     if (refs.length > 0) node.refs = refs;
     return [node];
+  }
+
+  /**
+   * `@warningRefs` / `@cautionRefs`（IDREFS）が指す警告・注意を admonition の節点にする。
+   * 参照先は、同じ DM の `warningsAndCautions` の warning / caution（本文を読む）か、
+   * `warningsAndCautionsRef` の warningRef / cautionRef（別の DM への dmRef。本文は読まず、`refs` と識別番号を返す）。
+   * どの節点にも `attrs.referencedId` を付ける。見つからない id は `attrs.unresolved` を付けて返す（黙って落とさない）
+   */
+  private referencedAdmonitions(el: Element): ContentNode[] {
+    const out: ContentNode[] = [];
+    for (const [attrName, level] of [
+      ['warningRefs', 'warning'],
+      ['cautionRefs', 'caution'],
+    ] as const) {
+      for (const id of (attr(el, attrName) ?? '').split(/\s+/).filter(Boolean)) {
+        const target = /^[\w.-]+$/.test(id)
+          ? (this.engine.selectNodes(`//*[@id="${id}"]`, el)[0] as Element | undefined)
+          : undefined;
+        if (target && (target.nodeName === 'warning' || target.nodeName === 'caution')) {
+          for (const n of this.readElement(target)) {
+            n.attrs = { ...(n.attrs ?? {}), referencedId: id };
+            out.push(n);
+          }
+          continue;
+        }
+        const node: ContentNode = {
+          kind: 'admonition',
+          element: target?.nodeName ?? attrName,
+          level,
+          id,
+          children: [],
+          location: describeLocation(target ?? el),
+          attrs: { referencedId: id },
+        };
+        if (target && (target.nodeName === 'warningRef' || target.nodeName === 'cautionRef')) {
+          const number = attr(target, 'warningIdentNumber') ?? attr(target, 'cautionIdentNumber');
+          if (number) node.attrs!.identNumber = number;
+          const r = elements(target)
+            .map((c) => this.refOf(c))
+            .find((x) => x !== undefined);
+          if (r) node.refs = [r];
+        } else node.attrs!.unresolved = 'true';
+        out.push(node);
+      }
+    }
+    return out;
   }
 
   readChildren(el: Element, stepCounter?: { n: number; prefix: string }): ContentNode[] {
@@ -510,6 +562,26 @@ class Reader {
     const put = (attrs: Record<string, string>, key: string, v: string | undefined) => {
       if (v) attrs[key] = v;
     };
+
+    // 条件: 文（reqCond）と、あれば参照（reqCondDm の dmRef など）
+    for (const cond of this.engine.selectNodes('reqCondGroup/*', el) as Element[]) {
+      if (cond.nodeName === 'noConds') continue;
+      const n = base('para', cond);
+      const condRefs: ContentRef[] = [];
+      const reqCond = firstChild(cond, 'reqCond');
+      if (reqCond) n.text = this.inlineText(reqCond, condRefs);
+      for (const c of elements(cond)) {
+        if (c.nodeName === 'reqCond') continue;
+        const r = this.refOf(c);
+        if (r) condRefs.push(r);
+      }
+      if (condRefs.length > 0) n.refs = condRefs;
+      if (cond.nodeName === 'reqCondCircuitBreaker') {
+        // 回路遮断器の条件は、文と参照以外（遮断器の一覧・操作）を読んでいない
+        n.attrs = { notRead: 'circuitBreakerDescrGroup' };
+      }
+      out.push(n);
+    }
 
     for (const p of this.engine.selectNodes(
       'reqPersons/personnel | reqPersons/person',
@@ -576,8 +648,10 @@ class Reader {
     items('supply', 'reqSupplies/supplyDescrGroup/supplyDescr');
     items('spare', 'reqSpares/spareDescrGroup/spareDescr');
 
-    for (const s of this.engine.selectNodes('reqSafety/safetyRqmts/*', el) as Element[])
-      out.push(...this.readElement(s));
+    for (const safety of this.engine.selectNodes('reqSafety/safetyRqmts', el) as Element[]) {
+      out.push(...this.referencedAdmonitions(safety));
+      for (const s of elements(safety)) out.push(...this.readElement(s));
+    }
     return out;
   }
 
@@ -595,7 +669,10 @@ class Reader {
       'reqCondGroup/reqCondNoRef/reqCond | reqCondGroup/reqCondDm/reqCond | reqCondGroup/reqCondPm/reqCond | reqCondGroup/reqCondExternalPub/reqCond | reqCondGroup/reqCondCircuitBreaker/reqCond',
       'reqCondGroup/noConds',
     );
-    const persons = this.engine.selectNodes('reqPersons/person', el) as Element[];
+    const persons = this.engine.selectNodes(
+      'reqPersons/person | reqPersons/personnel',
+      el,
+    ) as Element[];
     if (persons.length > 0) {
       parts.push(
         `persons: ${persons
@@ -604,8 +681,10 @@ class Reader {
             const cat = this.engine.selectString('personCategory/@personCategoryCode', p);
             const time = this.engine.selectString('estimatedTime', p);
             const unit = this.engine.selectString('estimatedTime/@unitOfMeasure', p);
+            const num = attr(p, 'numRequired');
             return [
               attr(p, 'man'),
+              num ? `x${num}` : undefined,
               cat,
               trade,
               time ? `${norm(time)} ${unit ?? ''}`.trim() : undefined,
@@ -640,9 +719,17 @@ class Reader {
     );
     descrList('supplies', 'reqSupplies//supplyDescr', 'reqSupplies/noSupplies');
     descrList('spares', 'reqSpares//spareDescr', 'reqSpares/noSpares');
-    const safety = this.engine.selectNodes('reqSafety/safetyRqmts/*', el) as Element[];
-    if (safety.length > 0)
-      parts.push(`safety: ${safety.map((s) => `${s.nodeName}: ${deepText(s)}`).join('; ')}`);
+    const safetyParts: string[] = [];
+    for (const rqmts of this.engine.selectNodes('reqSafety/safetyRqmts', el) as Element[]) {
+      // 共通の警告・注意への参照（@warningRefs / @cautionRefs）。本文は子の節点にある
+      for (const n of this.referencedAdmonitions(rqmts)) {
+        const where =
+          n.refs?.[0]?.target ?? (n.attrs?.unresolved ? 'unresolved' : 'in this data module');
+        safetyParts.push(`${n.level} ref ${n.attrs?.referencedId} (${where})`);
+      }
+      for (const s of elements(rqmts)) safetyParts.push(`${s.nodeName}: ${deepText(s)}`);
+    }
+    if (safetyParts.length > 0) parts.push(`safety: ${safetyParts.join('; ')}`);
     else if (this.engine.selectNodes('reqSafety/noSafety', el).length > 0)
       parts.push('safety: none');
     return parts.join('. ');

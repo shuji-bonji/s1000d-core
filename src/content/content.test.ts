@@ -120,14 +120,16 @@ describe('readContent', () => {
     expect(pre.text).toContain('supplies: none');
     expect(pre.text).toContain('safety: warning: 扉を開ける前に電源を切る');
     // 人員・品目・安全の要件は、子の節点としても返す（書く側の DraftNode と同じ種類）
-    expect(pre.children.map((n) => n.kind)).toEqual(['person', 'equipment', 'admonition']);
-    expect(pre.children[0]).toMatchObject({
+    expect(pre.children.map((n) => n.kind)).toEqual(['para', 'person', 'equipment', 'admonition']);
+    expect(pre.children[0]).toMatchObject({ kind: 'para', element: 'reqCondNoRef' });
+    expect(pre.children[0].text).toContain('電源が入っていること');
+    expect(pre.children[1]).toMatchObject({
       kind: 'person',
       element: 'person',
       text: '係員',
       attrs: { man: 'A', personCategoryCode: 'Operator' },
     });
-    expect(pre.children[1]).toMatchObject({
+    expect(pre.children[2]).toMatchObject({
       kind: 'equipment',
       id: 'seq-0001',
       title: '保守鍵',
@@ -136,7 +138,7 @@ describe('readContent', () => {
       quantity: '1',
       unit: 'EA',
     });
-    expect(pre.children[2]).toMatchObject({ kind: 'admonition', level: 'warning' });
+    expect(pre.children[3]).toMatchObject({ kind: 'admonition', level: 'warning' });
     expect(s1).toMatchObject({ kind: 'step', number: '1', id: 'stp-0001' });
     expect(s1.text).toBe('保守鍵（ [→ seq-0001] ）で前面扉を開ける。');
     expect(s1.refs).toEqual([{ kind: 'internalRef', target: 'seq-0001', note: 'irtt05' }]);
@@ -162,6 +164,74 @@ describe('readContent', () => {
     });
     expect(close).toMatchObject({ kind: 'requirements', text: 'conditions: none' });
     expect(c.unknownElements).toEqual({});
+  });
+
+  it('proced: 共通の警告・注意への参照（@warningRefs / @cautionRefs）と、参照付きの条件を落とさない', () => {
+    const c = readContentFromXml(
+      wrap(
+        'proced',
+        `<warningsAndCautionsRef>
+  <warningRef id="w001" warningIdentNumber="warning-001">${DMREF}</warningRef>
+</warningsAndCautionsRef>
+<warningsAndCautions>
+  <caution id="c001"><warningAndCautionPara>扉は重い</warningAndCautionPara></caution>
+</warningsAndCautions>
+<procedure>
+  <preliminaryRqmts>
+    <reqCondGroup>
+      <reqCondDm><reqCond>電源を切ってあること</reqCond>${DMREF}</reqCondDm>
+    </reqCondGroup>
+    <reqPersons><personnel numRequired="2"><trade>係員</trade></personnel></reqPersons>
+    <reqSupportEquips><noSupportEquips/></reqSupportEquips><reqSupplies><noSupplies/></reqSupplies><reqSpares><noSpares/></reqSpares>
+    <reqSafety><safetyRqmts warningRefs="w001 w999" cautionRefs="c001"/></reqSafety>
+  </preliminaryRqmts>
+  <mainProcedure>
+    <proceduralStep cautionRefs="c001"><para>扉を開ける。</para></proceduralStep>
+  </mainProcedure>
+  <closeRqmts><reqCondGroup><noConds/></reqCondGroup></closeRqmts>
+</procedure>`,
+      ),
+    );
+    const pre = c.blocks.find((b) => b.kind === 'requirements')!;
+    // 条件の参照（reqCondDm の dmRef）
+    expect(pre.children[0]).toMatchObject({
+      kind: 'para',
+      element: 'reqCondDm',
+      text: '電源を切ってあること',
+      refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-00-00-00A-040A-A' }],
+    });
+    expect(pre.children[1]).toMatchObject({ kind: 'person', element: 'personnel', count: 2 });
+    expect(pre.text).toContain('persons: x2 / 係員');
+    // 安全の要件: 別の DM の警告への参照、見つからない id、同じ DM の注意
+    const safety = pre.children.filter((n) => n.kind === 'admonition');
+    expect(safety).toHaveLength(3);
+    expect(safety[0]).toMatchObject({
+      level: 'warning',
+      element: 'warningRef',
+      attrs: { referencedId: 'w001', identNumber: 'warning-001' },
+      refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-00-00-00A-040A-A' }],
+    });
+    expect(safety[1]).toMatchObject({
+      level: 'warning',
+      attrs: { referencedId: 'w999', unresolved: 'true' },
+    });
+    expect(safety[2]).toMatchObject({
+      level: 'caution',
+      element: 'caution',
+      attrs: { referencedId: 'c001' },
+    });
+    expect(safety[2].children[0].text).toBe('扉は重い');
+    expect(pre.text).toContain(
+      'safety: warning ref w001 (KENBAIKI-A-10-00-00-00A-040A-A); warning ref w999 (unresolved); caution ref c001 (in this data module)',
+    );
+    expect(pre.text).not.toContain('safety: none');
+    // 手順の @cautionRefs も、手順の先頭の admonition として読む
+    const step = c.blocks.find((b) => b.kind === 'step')!;
+    expect(step.children[0]).toMatchObject({
+      kind: 'admonition',
+      level: 'caution',
+      attrs: { referencedId: 'c001' },
+    });
   });
 
   it('process: dmNode / dmSeq / dmIf / dialog', () => {

@@ -402,7 +402,23 @@ class Reader {
         break;
       case 'if': {
         node.text = attr(el, 'applicRefId') ? `if applic ${attr(el, 'applicRefId')}` : undefined;
-        node.children = this.readChildren(el, stepCounter);
+        // 条件: expression/@humanReadableForm が人が読む文（書く側は DraftNode.question から作る）。
+        // 式の中身（演算・値）は評価しない。変数 1 つを参照するだけの式なら、その名前を attrs に残す
+        const expression = firstChild(el, 'expression');
+        if (expression) {
+          const readable = attr(expression, 'humanReadableForm');
+          if (readable) node.question = norm(readable);
+          const vars = elements(expression).filter((c) => c.nodeName === 'variableRef');
+          const v = vars.length === 1 ? attr(vars[0], 'variableName') : undefined;
+          if (v && elements(expression).length === 1) node.attrs = { variableName: v };
+        }
+        // 条件を読めた expression は子に残さない。読めなかった式（文が無く、変数 1 つでもない）は unknown として残す
+        const conditionRead = node.question !== undefined || node.attrs !== undefined;
+        node.children = [];
+        for (const c of elements(el)) {
+          if (c === expression && conditionRead) continue;
+          node.children.push(...this.readElement(c, stepCounter));
+        }
         break;
       }
       case 'section':

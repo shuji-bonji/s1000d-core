@@ -1,5 +1,16 @@
 # Changelog
 
+## 未リリース
+
+実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません。
+
+### 修正
+
+- `readContent` は、プロセス DM の `dmIf` の条件を読んでいませんでした。`expression` と `variableRef` が `unknown` の節点になり、条件の文が返りませんでした。
+  - `dmIf` の節点（`kind: "if"`）の `question` に、`expression/@humanReadableForm` の文を入れます。書く側（`buildContent`）が `DraftNode.question` から作る属性と同じ場所です。
+  - 式が変数 1 つを参照するだけのときは、`attrs.variableName` に変数名を入れます。式の中身（演算・値）は評価しません。
+  - 条件を読めた `expression` は子の節点に残しません。文が無く、変数 1 つでもない式は、これまでどおり `unknown` として残します。
+
 ## 0.8.3 (2026-11-06)
 
 XSD の修正候補の不足を直しました（[#1](https://github.com/shuji-bonji/s1000d-core/issues/1)）。既存の API は変えていません（型に任意の項目を足しただけです）。

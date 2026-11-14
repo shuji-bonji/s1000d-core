@@ -50,6 +50,7 @@ const PROCESS = wrap(
   <dmSeq>
     <dmNode><title>人数の選択</title><dialog><dialogGroup><userEntry><prompt><paraBasic>人数を入れてください</paraBasic></prompt><variableRef variableName="persons"/></userEntry></dialogGroup></dialog></dmNode>
     <dmIf applicRefId="many"><dmNode><title>団体</title><proceduralStep><para>係員を呼ぶ。</para></proceduralStep></dmNode></dmIf>
+    <dmIf id="cond1"><expression humanReadableForm="[戻る] と [次へ] を同時に 2 秒押したとき"><variableRef variableName="cond1"/></expression><dmThenSeq><dmNode><title>保守画面</title><proceduralStep><para>設定を確かめる。</para></proceduralStep></dmNode></dmThenSeq></dmIf>
   </dmSeq>
 </process>`,
 );
@@ -155,7 +156,7 @@ describe('readContent', () => {
       text: '画面に触れる。',
     });
     const seq = c.blocks[1];
-    expect(seq.children.map((n) => n.kind)).toEqual(['section', 'if']);
+    expect(seq.children.map((n) => n.kind)).toEqual(['section', 'if', 'if']);
     const dialog = find(seq.children, (n) => n.kind === 'dialog' && n.element === 'userEntry');
     expect(dialog).toMatchObject({
       text: '人数を入れてください',
@@ -166,6 +167,34 @@ describe('readContent', () => {
       applicRefId: 'many',
       text: 'if applic many',
     });
+    // expression の無い dmIf には条件の文を付けない
+    expect(seq.children[1].question).toBeUndefined();
+    // 条件の文は expression/@humanReadableForm から読む。読めた expression は unknown に数えない
+    expect(seq.children[2]).toMatchObject({
+      kind: 'if',
+      id: 'cond1',
+      question: '[戻る] と [次へ] を同時に 2 秒押したとき',
+      attrs: { variableName: 'cond1' },
+    });
+    expect(seq.children[2].children.map((n) => n.title)).toEqual(['保守画面']);
+    expect(c.unknownElements.expression).toBeUndefined();
+  });
+
+  it('process: 条件を読めない dmIf の expression は unknown として残す', () => {
+    const c = readContentFromXml(
+      wrap(
+        'process',
+        `<process><dmSeq>
+  <dmIf id="cond2"><expression><variableRef variableName="a"/><variableRef variableName="b"/></expression><dmThenSeq><dmNode><title>読めない条件</title></dmNode></dmThenSeq></dmIf>
+</dmSeq></process>`,
+      ),
+    );
+    const node = c.blocks[0].children[0];
+    expect(node.kind).toBe('if');
+    expect(node.question).toBeUndefined();
+    expect(node.attrs).toBeUndefined();
+    expect(node.children.map((n) => n.element)).toEqual(['expression', 'dmNode']);
+    expect(c.unknownElements.expression).toBe(1);
   });
 
   it('fault: 問いと答えごとの次の手順', () => {

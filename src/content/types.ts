@@ -61,7 +61,7 @@ export interface ContentNode {
   ordered?: boolean;
   /** table の行（thead を先頭に含む）。セルは文字列 */
   rows?: string[][];
-  /** fault の isolationStep: 問いと、答えごとの次の手順 */
+  /** fault の isolationStep: 問いと、答えごとの次の手順。process の dmIf では条件を人が読める文にしたもの（`expression/@humanReadableForm`） */
   question?: string;
   choices?: Array<{ text: string; nextActionRefId?: string }>;
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */

@@ -10,7 +10,7 @@
   - XSD の並びに合わせ、入力の位置にかかわらず警告 → 注意 → 備考の順に書きます（並べ替えたときは `notes` に書きます）。
   - 本体より後ろの `requirements`（`closeRqmts`）に `admonition` を置くと `DraftInputError` です（`closeRqmts` に安全の要件の場所が無いため）。
 - 下書きの `requirements`（同上）が、人員・参照する文書・品目も受け取ります（W-1 の残り）。節点の種類 `person`・`document`・`equipment`・`supply`・`spare` と、項目 `count`・`quantity`・`unit`・`partNumber`・`manufacturerCode` を足しました（JSON Schema も同じ）。
-  - `person` → `reqPersons/personnel`（`count` が `@numRequired`、`text` が `trade`）。
+  - `person` → `reqPersons` の `personnel`（`count` が `@numRequired`）または `person`（`man` があるとき）。`text` が `trade`。
   - `document` → `reqTechInfoGroup/reqTechInfo`。`refs` に `dmRef` か `pmRef` が 1 つあればその参照、無ければ `title`（題名）と `text`（番号）から `externalPubRef`。
   - `equipment`・`supply`・`spare` → `supportEquipDescr`・`supplyDescr`・`spareDescr`（`title` が `name`、`manufacturerCode` と `partNumber` が `identNumber`、`quantity` と `unit` が `reqQuantity`、`text` が `remarks`）。XSD は品目に識別子と `reqQuantity` を要求します。値を補うことはしないので、`manufacturerCode` か `quantity` が無い品目は `DraftInputError` です。
   - 入力に無い必須の区分（支援機材・消耗品・予備品・安全）は、これまでどおり「なし」の要素で埋め、どれを埋めたかを `notes` に書きます。
@@ -20,7 +20,11 @@
   - 見つからない id は、`attrs.unresolved` を付けた `admonition` として返します（黙って落としません）。
   - `requirements` の要約には「safety: warning ref w001 (参照先)」の形で入ります。
 - `readContent` は、`preliminaryRqmts` / `closeRqmts` の条件を、`requirements` の子の `para` としても返します（`reqCondDm` などの参照は `refs` に入ります。これまでは要約の文にだけ入り、参照は落ちていました）。要約の「persons:」には `personnel`（`@numRequired`）も入ります。
-- 配布物のテストに、Bike Samples の `preliminaryRqmts` を「読んで、書いて、失われる要素・属性を数える」テストを足しました（`src/content/requirements.spec.test.ts`）。2026-11-15 の実測は、41 件の DM で要素・属性 2,527 個のうち 898 個が失われます。この数を上限として固定し、減らす方向にだけ動かします。
+- 配布物のテストに、Bike Samples の `preliminaryRqmts` を「読んで、書いて、失われる要素・属性を数える」テストを足しました（`src/content/requirements.spec.test.ts`）。41 件の DM の要素・属性 2,527 個のうち、最初の実測では 898 個が失われ、下の人員・文書・条件の項目を足した後は 631 個です（何も失わずに往復できる DM は 3 件 → 26 件）。この数を上限として固定し、減らす方向にだけ動かします。
+- 下書きと読み取りの `person` に、`man`（あれば `person` 要素、無ければ `personnel`）・`personCategoryCode`・`skillLevelCode`・`estimatedTime`・`estimatedTimeUnit` を足しました。中身の無い `personnel` も書けます。`man` と `count` は一緒に使えません（`person` 要素に人数の属性が無いため）。
+- 下書きと読み取りの `document` に `reqTechInfoCategory` を足しました。
+- 下書きの条件（`requirements` の子の `para`）が、参照を 1 つ受け取ります。`dmRef` は `reqCondDm`、`pmRef` は `reqCondPm` として書きます（`closeRqmts` でも同じ）。
+- `readContent` は、あることは分かっているが中身を読んでいない要素を知らせます。`DataModuleContent.notReadElements`（名前 → 数）と `notes` に入り、該当する節点には `attrs.notRead` が付きます。対象は `productionMaintData`、品目の `identNumber` 以外の識別子（`toolRef`・`partRef`・`supplyRef` など）、入れ子の品目（`embedded…Descr`）、`hazards`、脚注、回路遮断器の一覧です。品目の `shortName`・`@materialUsage`・`@supplyCategory` は `attrs` に読みます。配布物のテストで、Bike Samples の `preliminaryRqmts` に、読まずに黙って落としている要素が無いことを確かめます。
 
 ### 変更（数え方が変わります）
 

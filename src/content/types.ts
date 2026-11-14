@@ -76,6 +76,16 @@ export interface ContentNode {
   choices?: Array<{ text: string; nextActionRefId?: string }>;
   /** person の人数（`personnel/@numRequired`） */
   count?: number;
+  /** person を区別する記号（`person/@man`） */
+  man?: string;
+  /** person の区分（`personCategory/@personCategoryCode`）と技能の水準（`personSkill/@skillLevelCode`）。値は解釈しない */
+  personCategoryCode?: string;
+  skillLevelCode?: string;
+  /** person の見積もり時間（`estimatedTime`）と単位（`@unitOfMeasure`） */
+  estimatedTime?: string;
+  estimatedTimeUnit?: string;
+  /** document の区分（`reqTechInfo/@reqTechInfoCategory`）。値は解釈しない */
+  reqTechInfoCategory?: string;
   /** equipment / supply / spare の数量（`reqQuantity`）と単位（`@unitOfMeasure`）。値は解釈しない */
   quantity?: string;
   unit?: string;
@@ -108,6 +118,11 @@ export interface DataModuleContent {
   notes: string[];
   /** 知らなかった要素名とその数（読み取り部分の改善の材料） */
   unknownElements: Record<string, number>;
+  /**
+   * あることは分かっているが、中身を読んでいない要素・属性の名前とその数（`productionMaintData`、`hazards` など）。
+   * 応答に含まれていない内容があることを知らせる。空なら、読み取り部分が知っている範囲では落としたものは無い
+   */
+  notReadElements: Record<string, number>;
 }
 
 /** 概要（outline）の節点。見出し・手順の番号・最初の 1 文と、部分木の大きさだけを持つ */

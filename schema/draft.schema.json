@@ -359,7 +359,31 @@
         "count": {
           "type": "integer",
           "minimum": 1,
-          "description": "person の人数"
+          "description": "person の人数（personnel/@numRequired）。man と一緒には使えない"
+        },
+        "man": {
+          "type": "string",
+          "description": "person を区別する記号（person/@man）。あれば person として書く"
+        },
+        "personCategoryCode": {
+          "type": "string",
+          "description": "person の区分（値は解釈しない）"
+        },
+        "skillLevelCode": {
+          "type": "string",
+          "description": "person の技能の水準（列挙のまま渡す）"
+        },
+        "estimatedTime": {
+          "type": "string",
+          "description": "person の見積もり時間（estimatedTimeUnit が要る）"
+        },
+        "estimatedTimeUnit": {
+          "type": "string",
+          "description": "見積もり時間の単位（値は解釈しない）"
+        },
+        "reqTechInfoCategory": {
+          "type": "string",
+          "description": "document の区分（列挙のまま渡す）"
         },
         "quantity": {
           "type": "string",

@@ -8,7 +8,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { measureRequirementsRoundTrip } from '../__fixtures__/requirements-roundtrip.js';
+import {
+  findSilentlyDroppedElements,
+  measureRequirementsRoundTrip,
+} from '../__fixtures__/requirements-roundtrip.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
 const specDir = resolve(process.env.S1000D_SPEC_DIR ?? '../../specs/s1000d/issue-7');
@@ -25,7 +28,11 @@ function findBikeDir(dir: string): string | undefined {
   return undefined;
 }
 
-/** 2026-11-15 の実測（core の `requirements` の子に person・document・equipment・supply・spare・admonition を足した時点） */
+/**
+ * 2026-11-15 の実測。
+ * - 最初（`requirements` の子に person・document・equipment・supply・spare・admonition を足した時点）: 失われた数 898、失わずに往復できた DM 3 件
+ * - 人員の `man`・区分・技能・見積もり時間、文書の区分、条件の参照（reqCondDm / reqCondPm）を足した後: 631、26 件
+ */
 const BASELINE = {
   /** preliminaryRqmts を持つ DM */
   withPreliminaryRqmts: 44,
@@ -34,9 +41,9 @@ const BASELINE = {
   /** 要素と属性の数（元） */
   originalTotal: 2527,
   /** 往復で失われた要素と属性の数の上限 */
-  lostTotal: 898,
+  lostTotal: 631,
   /** 何も失わずに往復できた DM の数の下限 */
-  clean: 3,
+  clean: 26,
 };
 
 const bikeDir = findBikeDir(specDir);
@@ -78,5 +85,25 @@ describe.skipIf(!enabled || !bikeDir)('preliminaryRqmts の往復（Bike Samples
     expect(lost['warning'] ?? 0).toBe(0);
     expect(lost['caution'] ?? 0).toBe(0);
     expect(lost['note'] ?? 0).toBe(0);
+    // 人員は、要素の種類（person / personnel）と中身をすべて往復できること
+    for (const k of [
+      'person',
+      'personnel',
+      'personCategory',
+      'personSkill',
+      'trade',
+      'estimatedTime',
+    ])
+      expect(lost[k] ?? 0, k).toBe(0);
+  });
+
+  it('reader は、読んでいない要素を黙って落とさない（読むか、notReadElements で知らせる）', () => {
+    const files = readdirSync(bikeDir!).filter((f) => /^DMC-.*\.XML$/i.test(f));
+    const silent: Record<string, string[]> = {};
+    for (const f of files) {
+      const dropped = findSilentlyDroppedElements(readFileSync(join(bikeDir!, f), 'utf8'));
+      if (dropped.length > 0) silent[f] = dropped;
+    }
+    expect(silent).toEqual({});
   });
 });

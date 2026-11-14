@@ -37,9 +37,15 @@ export type DraftNodeKind =
    * person・document・equipment・supply・spare を人員・文書・品目として受け取る
    */
   | 'requirements'
-  /** requirements の子: 必要な人員（reqPersons/personnel）。`text` が役割、`count` が人数 */
+  /**
+   * requirements の子: 必要な人員。`man` があれば `person`（人を区別する）、無ければ `personnel`（人数で書く）。
+   * `text` が職種（trade）、`count` が人数（`personnel/@numRequired`）
+   */
   | 'person'
-  /** requirements の子: 参照する文書（reqTechInfo）。`refs` に dmRef / pmRef が 1 つ、または `title`（題名）と `text`（番号） */
+  /**
+   * requirements の子: 参照する文書（reqTechInfo）。`refs` に dmRef / pmRef が 1 つ、または `title`（題名）と `text`（番号）。
+   * `reqTechInfoCategory` は区分（値は解釈しない）
+   */
   | 'document'
   /** requirements の子: 試験器材・工具（supportEquipDescr）。`title` が名前。`manufacturerCode` と `quantity` が要る */
   | 'equipment'
@@ -127,8 +133,20 @@ export interface DraftNode {
   question?: string;
   /** fault の step の答えと次の手順（`next` は同じ DM の step の id）。process の dialog では選択肢（`next` は使わない） */
   choices?: Array<{ text: string; next?: string }>;
-  /** person の人数（1 以上の整数。`personnel/@numRequired`） */
+  /** person の人数（1 以上の整数。`personnel/@numRequired`）。`man` と一緒には使えない */
   count?: number;
+  /** person を区別する記号（`person/@man`。A、B など）。あれば personnel ではなく person として書く */
+  man?: string;
+  /** person の区分（`personCategory/@personCategoryCode`。値はプロジェクトが決める。解釈しない） */
+  personCategoryCode?: string;
+  /** person の技能の水準（`personSkill/@skillLevelCode`。sk01 など。列挙のまま渡す） */
+  skillLevelCode?: string;
+  /** person の見積もり時間（`estimatedTime`）。`estimatedTimeUnit` が要る */
+  estimatedTime?: string;
+  /** 見積もり時間の単位（`estimatedTime/@unitOfMeasure`。値は解釈しない） */
+  estimatedTimeUnit?: string;
+  /** document の区分（`reqTechInfo/@reqTechInfoCategory`。ti01 など。列挙のまま渡す） */
+  reqTechInfoCategory?: string;
   /** equipment / supply / spare の数量（`reqQuantity`。必須） */
   quantity?: string;
   /** 数量の単位（`reqQuantity/@unitOfMeasure`。値は解釈しない） */

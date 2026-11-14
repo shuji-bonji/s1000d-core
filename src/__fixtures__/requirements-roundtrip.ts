@@ -48,29 +48,50 @@ const fragment = (xml: string) => /<preliminaryRqmts[\s\S]*?<\/preliminaryRqmts>
 function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
   const id = n.id ? { id: n.id } : {};
   switch (n.kind) {
-    case 'para':
-      // 下書きの条件は文だけ（参照は受け取らない）
-      return n.text ? { node: { kind: 'para', text: n.text } } : { reason: 'para without text' };
+    case 'para': {
+      if (!n.text) return { reason: 'para without text' };
+      // 条件の参照は、dmRef / pmRef を 1 つだけ受け取る（文の中の参照は `[→ …]` として文に残る）
+      const r = n.refs?.length === 1 ? n.refs[0] : undefined;
+      const text = n.text.replace(/\s*\[→ [^\]]*\]\s*/g, ' ').trim() || n.text;
+      if (r && (r.kind === 'dmRef' || r.kind === 'pmRef') && n.element !== 'reqCondNoRef')
+        return {
+          node: { kind: 'para', ...id, text, refs: [{ kind: r.kind, target: r.target }] },
+        };
+      return { node: { kind: 'para', ...id, text: n.text } };
+    }
     case 'person':
-      return n.text !== undefined || n.count !== undefined
-        ? {
-            node: {
-              kind: 'person',
-              ...(n.text !== undefined ? { text: n.text } : {}),
-              ...(n.count !== undefined ? { count: n.count } : {}),
-            },
-          }
-        : { reason: 'person without trade or numRequired' };
+      return {
+        node: {
+          kind: 'person',
+          ...(n.text !== undefined ? { text: n.text } : {}),
+          ...(n.count !== undefined && n.man === undefined ? { count: n.count } : {}),
+          ...(n.man !== undefined ? { man: n.man } : {}),
+          ...(n.personCategoryCode !== undefined
+            ? { personCategoryCode: n.personCategoryCode }
+            : {}),
+          ...(n.skillLevelCode !== undefined ? { skillLevelCode: n.skillLevelCode } : {}),
+          ...(n.estimatedTime !== undefined && n.estimatedTimeUnit !== undefined
+            ? { estimatedTime: n.estimatedTime, estimatedTimeUnit: n.estimatedTimeUnit }
+            : {}),
+        },
+      };
     case 'document': {
       const r = n.refs?.[0];
+      const category =
+        n.reqTechInfoCategory !== undefined ? { reqTechInfoCategory: n.reqTechInfoCategory } : {};
       if (r && (r.kind === 'dmRef' || r.kind === 'pmRef'))
         return {
-          node: { kind: 'document', refs: [{ kind: r.kind, target: r.target, title: r.title }] },
+          node: {
+            kind: 'document',
+            ...category,
+            refs: [{ kind: r.kind, target: r.target, title: r.title }],
+          },
         };
       if (n.title !== undefined || n.text !== undefined)
         return {
           node: {
             kind: 'document',
+            ...category,
             ...(n.title !== undefined ? { title: n.title } : {}),
             ...(n.text !== undefined ? { text: n.text } : {}),
           },
@@ -148,4 +169,86 @@ export function measureRequirementsRoundTrip(xml: string): RequirementsRoundTrip
     if (diff > 0) lost[k] = diff;
   }
   return { original, lost, dropped };
+}
+
+/** reader が preliminaryRqmts の中で読んでいる要素（構造として返す、または文・属性として読む） */
+const READ_ELEMENTS = new Set([
+  'preliminaryRqmts',
+  'reqCondGroup',
+  'noConds',
+  'reqCondNoRef',
+  'reqCondDm',
+  'reqCondPm',
+  'reqCondExternalPub',
+  'reqCondCircuitBreaker',
+  'reqPersons',
+  'personnel',
+  'person',
+  'personCategory',
+  'personSkill',
+  'reqTechInfoGroup',
+  'reqTechInfo',
+  'reqSupportEquips',
+  'noSupportEquips',
+  'supportEquipDescrGroup',
+  'supportEquipDescr',
+  'reqSupplies',
+  'noSupplies',
+  'supplyDescrGroup',
+  'supplyDescr',
+  'reqSpares',
+  'noSpares',
+  'spareDescrGroup',
+  'spareDescr',
+  'identNumber',
+  'partAndSerialNumber',
+  'reqSafety',
+  'noSafety',
+  'safetyRqmts',
+]);
+
+/** 中身ごと読んでいる要素（文として読む、参照として読む、節点として読む）。この下は調べない */
+const READ_SUBTREES = new Set([
+  'reqCond',
+  'trade',
+  'estimatedTime',
+  'dmRef',
+  'pmRef',
+  'externalPubRef',
+  'name',
+  'shortName',
+  'manufacturerCode',
+  'partNumber',
+  'reqQuantity',
+  'remarks',
+  'warning',
+  'caution',
+  'note',
+]);
+
+/**
+ * preliminaryRqmts の中の要素のうち、reader が読んでおらず、読んでいないことも知らせていないものの名前を返す。
+ * 空でなければ、reader が黙って落としている要素がある。
+ * 参照（dmRef など）の中身は「読んでいる」とみなす。参照が返すのは行き先と題名だけで、版と言語は返していない
+ */
+export function findSilentlyDroppedElements(xml: string): string[] {
+  const source = fragment(xml);
+  if (!source) return [];
+  const content = readContentFromXml(xml);
+  if (!content.blocks.some((b) => b.kind === 'requirements' && b.element === 'preliminaryRqmts'))
+    return [];
+  const reported = new Set(Object.keys(content.notReadElements));
+  const dropped = new Set<string>();
+  const doc = new DOMParser().parseFromString(source, 'text/xml');
+  const walk = (n: { nodeType: number; nodeName: string; childNodes: ArrayLike<unknown> }) => {
+    if (n.nodeType !== 1) return;
+    if (READ_SUBTREES.has(n.nodeName) || reported.has(n.nodeName)) return;
+    if (!READ_ELEMENTS.has(n.nodeName)) {
+      dropped.add(n.nodeName);
+      return;
+    }
+    for (const c of Array.from(n.childNodes)) walk(c as never);
+  };
+  walk(doc.documentElement as never);
+  return [...dropped].sort();
 }

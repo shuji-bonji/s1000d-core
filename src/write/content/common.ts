@@ -108,8 +108,16 @@ const FIELDS: Record<DraftNodeKind, readonly (keyof DraftNode)[]> = {
   admonition: ['level', 'text', 'refs', 'children'],
   step: ['title', 'text', 'refs', 'children', 'question', 'choices'],
   requirements: ['text', 'children'],
-  person: ['text', 'count'],
-  document: ['title', 'text', 'refs'],
+  person: [
+    'text',
+    'count',
+    'man',
+    'personCategoryCode',
+    'skillLevelCode',
+    'estimatedTime',
+    'estimatedTimeUnit',
+  ],
+  document: ['title', 'text', 'refs', 'reqTechInfoCategory'],
   equipment: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
   supply: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
   spare: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
@@ -644,30 +652,48 @@ export class Writer {
    */
   reqCondGroup(req?: { node: DraftNode; path: string }): Element {
     const group = this.el('reqCondGroup');
-    const texts: string[] = [];
+    const conds: Element[] = [];
+    const noRef = (text: string): Element => {
+      const c = this.el('reqCondNoRef');
+      c.appendChild(this.textEl('reqCond', text));
+      return c;
+    };
     if (req) {
       this.checkFields(req.node, req.path);
-      if (req.node.text !== undefined) texts.push(req.node.text);
+      if (req.node.text !== undefined) conds.push(noRef(req.node.text));
       this.childrenOf(req.node, 'requirements', req.path).forEach((c, i) => {
         if (c.kind !== 'para') return;
+        const path = `${req.path}/children[${i + 1}]`;
         if (c.text === undefined) {
-          throw new DraftInputError(`${req.path}/children[${i + 1}]`, 'a requirement needs text');
+          throw new DraftInputError(path, 'a requirement needs text');
         }
-        if ((c.refs?.length ?? 0) > 0) {
+        if ((c.children?.length ?? 0) > 0) {
+          throw new DraftInputError(`${path}/children`, 'a requirement takes no child nodes');
+        }
+        const refs = c.refs ?? [];
+        if (refs.length === 0) {
+          conds.push(this.common(noRef(c.text), c));
+          return;
+        }
+        // 参照が 1 つ: dmRef は reqCondDm、pmRef は reqCondPm（条件を満たす手順がある文書への参照）
+        if (refs.length > 1) {
+          throw new DraftInputError(`${path}/refs`, 'a requirement takes at most one ref');
+        }
+        const ref = refs[0];
+        if (ref.kind !== 'dmRef' && ref.kind !== 'pmRef') {
           throw new DraftInputError(
-            `${req.path}/children[${i + 1}]`,
-            'a requirement takes no refs',
+            `${path}/refs[1]`,
+            `a requirement takes a dmRef or a pmRef, not ${ref.kind}`,
           );
         }
-        texts.push(c.text);
+        const e = this.common(this.el(ref.kind === 'dmRef' ? 'reqCondDm' : 'reqCondPm'), c);
+        e.appendChild(this.textEl('reqCond', c.text));
+        e.appendChild(this.inlineRef(ref, `${path}/refs[1]`));
+        conds.push(e);
       });
     }
-    if (texts.length === 0) group.appendChild(this.el('noConds'));
-    for (const t of texts) {
-      const c = this.el('reqCondNoRef');
-      c.appendChild(this.textEl('reqCond', t));
-      group.appendChild(c);
-    }
+    if (conds.length === 0) group.appendChild(this.el('noConds'));
+    for (const c of conds) group.appendChild(c);
     return group;
   }
 
@@ -708,23 +734,52 @@ export class Writer {
       .filter((x) => x.c.kind === kind);
   }
 
-  /** reqPersons: person を personnel（`@numRequired` と trade）に書く。無ければ要素を置かない（XSD で任意） */
+  /**
+   * reqPersons: `man` があれば person、無ければ personnel（`@numRequired`）に書く。中身は XSD の順
+   * （personCategory → personSkill → trade → estimatedTime）。中身の無い personnel も書く（XSD で許される）。
+   * 無ければ要素を置かない（XSD で任意）
+   */
   private reqPersons(req?: { node: DraftNode; path: string }): Element | undefined {
     const found = this.reqChildren(req, 'person');
     if (found.length === 0) return undefined;
     const e = this.el('reqPersons');
     for (const { c, path } of found) {
-      if (c.text === undefined && c.count === undefined) {
-        throw new DraftInputError(path, 'a "person" node needs text (the role) or count');
-      }
       if (c.count !== undefined && !(Number.isInteger(c.count) && c.count >= 1)) {
         throw new DraftInputError(`${path}/count`, 'count must be an integer of at least 1');
       }
+      if (c.man !== undefined && c.count !== undefined) {
+        throw new DraftInputError(
+          `${path}/count`,
+          'a "person" node with man is one person (the "person" element has no numRequired); use count without man for "personnel"',
+        );
+      }
+      if (c.man === '') throw new DraftInputError(`${path}/man`, 'man must not be empty');
+      if (c.estimatedTime !== undefined && !c.estimatedTimeUnit) {
+        throw new DraftInputError(
+          `${path}/estimatedTimeUnit`,
+          'estimatedTime needs estimatedTimeUnit (the schema requires unitOfMeasure)',
+        );
+      }
+      if (c.estimatedTime === undefined && c.estimatedTimeUnit !== undefined) {
+        throw new DraftInputError(`${path}/estimatedTime`, 'estimatedTimeUnit needs estimatedTime');
+      }
       const p = this.common(
-        this.el('personnel', { numRequired: c.count === undefined ? undefined : String(c.count) }),
+        c.man !== undefined
+          ? this.el('person', { man: c.man })
+          : this.el('personnel', {
+              numRequired: c.count === undefined ? undefined : String(c.count),
+            }),
         c,
       );
+      if (c.personCategoryCode !== undefined)
+        p.appendChild(this.el('personCategory', { personCategoryCode: c.personCategoryCode }));
+      if (c.skillLevelCode !== undefined)
+        p.appendChild(this.el('personSkill', { skillLevelCode: c.skillLevelCode }));
       if (c.text !== undefined) p.appendChild(this.textEl('trade', c.text));
+      if (c.estimatedTime !== undefined)
+        p.appendChild(
+          this.textEl('estimatedTime', c.estimatedTime, { unitOfMeasure: c.estimatedTimeUnit }),
+        );
       e.appendChild(p);
     }
     return e;
@@ -739,7 +794,7 @@ export class Writer {
     if (found.length === 0) return undefined;
     const e = this.el('reqTechInfoGroup');
     for (const { c, path } of found) {
-      const info = this.el('reqTechInfo');
+      const info = this.el('reqTechInfo', { reqTechInfoCategory: c.reqTechInfoCategory });
       const refs = c.refs ?? [];
       if (refs.length > 1) {
         throw new DraftInputError(`${path}/refs`, 'a "document" node takes at most one ref');

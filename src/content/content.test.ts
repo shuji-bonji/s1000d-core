@@ -127,8 +127,12 @@ describe('readContent', () => {
       kind: 'person',
       element: 'person',
       text: '係員',
-      attrs: { man: 'A', personCategoryCode: 'Operator' },
+      man: 'A',
+      personCategoryCode: 'Operator',
+      estimatedTime: '5',
+      estimatedTimeUnit: 'min',
     });
+    expect(c.notReadElements).toEqual({});
     expect(pre.children[2]).toMatchObject({
       kind: 'equipment',
       id: 'seq-0001',
@@ -201,6 +205,7 @@ describe('readContent', () => {
       refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-00-00-00A-040A-A' }],
     });
     expect(pre.children[1]).toMatchObject({ kind: 'person', element: 'personnel', count: 2 });
+    expect(pre.children[1].man).toBeUndefined();
     expect(pre.text).toContain('persons: x2 / 係員');
     // 安全の要件: 別の DM の警告への参照、見つからない id、同じ DM の注意
     const safety = pre.children.filter((n) => n.kind === 'admonition');

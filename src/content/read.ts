@@ -173,6 +173,15 @@ const INLINE = new Set([
   'realValue',
 ]);
 
+/** 品目（supportEquipDescr など）の子のうち、中身を読んでいない要素（識別子以外） */
+const ITEM_NOT_READ = new Set([
+  'embeddedSupportEquipDescr',
+  'embeddedSupplyDescr',
+  'embeddedSpareDescr',
+  'hazards',
+  'footnoteRemarks',
+]);
+
 /** 品目（supportEquipDescr など）の識別子のうち、identNumber 以外の要素 */
 const ITEM_IDENTIFIERS = new Set([
   'catalogSeqNumberRef',
@@ -208,6 +217,12 @@ function deepText(el: Element): string {
 
 class Reader {
   readonly unknown: Record<string, number> = {};
+  /** あることは分かっているが、中身を読んでいない要素（名前 → 数） */
+  readonly notRead: Record<string, number> = {};
+
+  private markNotRead(name: string): void {
+    this.notRead[name] = (this.notRead[name] ?? 0) + 1;
+  }
   constructor(private readonly engine: XmlEngine) {}
 
   private refOf(el: Element): ContentRef | undefined {
@@ -563,6 +578,16 @@ class Reader {
       if (v) attrs[key] = v;
     };
 
+    // 作業の場所・所要時間など（productionMaintData）は読んでいない。あることを知らせる
+    for (const c of elements(el)) {
+      if (c.nodeName !== 'productionMaintData') continue;
+      this.markNotRead('productionMaintData');
+      out.push({
+        ...base('unknown', c),
+        attrs: { notRead: 'productionMaintData' },
+      });
+    }
+
     // 条件: 文（reqCond）と、あれば参照（reqCondDm の dmRef など）
     for (const cond of this.engine.selectNodes('reqCondGroup/*', el) as Element[]) {
       if (cond.nodeName === 'noConds') continue;
@@ -579,6 +604,7 @@ class Reader {
       if (cond.nodeName === 'reqCondCircuitBreaker') {
         // 回路遮断器の条件は、文と参照以外（遮断器の一覧・操作）を読んでいない
         n.attrs = { notRead: 'circuitBreakerDescrGroup' };
+        this.markNotRead('circuitBreakerDescrGroup');
       }
       out.push(n);
     }
@@ -592,13 +618,16 @@ class Reader {
       if (trade) n.text = trade;
       const num = attr(p, 'numRequired');
       if (num && /^\d+$/.test(num)) n.count = Number(num);
-      const attrs: Record<string, string> = {};
-      put(attrs, 'man', attr(p, 'man'));
-      put(attrs, 'personCategoryCode', str('personCategory/@personCategoryCode', p));
-      put(attrs, 'skillLevelCode', str('personSkill/@skillLevelCode', p));
-      put(attrs, 'estimatedTime', str('estimatedTime', p));
-      put(attrs, 'estimatedTimeUnit', str('estimatedTime/@unitOfMeasure', p));
-      if (Object.keys(attrs).length > 0) n.attrs = attrs;
+      const man = attr(p, 'man');
+      if (man) n.man = man;
+      const category = str('personCategory/@personCategoryCode', p);
+      if (category) n.personCategoryCode = category;
+      const skill = str('personSkill/@skillLevelCode', p);
+      if (skill) n.skillLevelCode = skill;
+      const time = str('estimatedTime', p);
+      if (time) n.estimatedTime = time;
+      const timeUnit = str('estimatedTime/@unitOfMeasure', p);
+      if (timeUnit) n.estimatedTimeUnit = timeUnit;
       out.push(n);
     }
 
@@ -615,7 +644,7 @@ class Reader {
         if (code) n.text = code;
       }
       const category = attr(info, 'reqTechInfoCategory');
-      if (category) n.attrs = { reqTechInfoCategory: category };
+      if (category) n.reqTechInfoCategory = category;
       out.push(n);
     }
 
@@ -640,10 +669,27 @@ class Reader {
         const others = elements(d)
           .map((c) => c.nodeName)
           .filter((x) => ITEM_IDENTIFIERS.has(x));
-        if (others.length > 0) n.attrs = { otherIdentifiers: [...new Set(others)].join(' ') };
+        const attrs: Record<string, string> = {};
+        if (others.length > 0) attrs.otherIdentifiers = [...new Set(others)].join(' ');
+        put(attrs, 'shortName', str('shortName', d));
+        put(attrs, 'materialUsage', attr(d, 'materialUsage'));
+        put(attrs, 'supplyCategory', attr(d, 'supplyCategory'));
+        // 中身を読んでいない子（入れ子の品目、危険性、脚注）は、あることを知らせる
+        const skipped = elements(d)
+          .map((c) => c.nodeName)
+          .filter((x) => ITEM_NOT_READ.has(x));
+        for (const x of [...others, ...skipped]) this.markNotRead(x);
+        if (skipped.length > 0) attrs.notRead = [...new Set(skipped)].join(' ');
+        if (Object.keys(attrs).length > 0) n.attrs = attrs;
         out.push(n);
       }
     };
+    // 品目の脚注（グループの直下の footnote）は読んでいない
+    const footnotes = this.engine.selectNodes(
+      'reqSupportEquips/*/footnote | reqSupplies/*/footnote | reqSpares/*/footnote',
+      el,
+    ).length;
+    for (let i = 0; i < footnotes; i++) this.markNotRead('footnote');
     items('equipment', 'reqSupportEquips/supportEquipDescrGroup/supportEquipDescr');
     items('supply', 'reqSupplies/supplyDescrGroup/supplyDescr');
     items('spare', 'reqSpares/spareDescrGroup/spareDescr');
@@ -762,12 +808,28 @@ export function readContent(
     notes.push(
       `Content of schema "${schemaName ?? '(unknown)'}" is not structured yet; only the identification and status section is read.`,
     );
-    return { schemaName, kind, structured: false, blocks: [], notes, unknownElements: {} };
+    return {
+      schemaName,
+      kind,
+      structured: false,
+      blocks: [],
+      notes,
+      unknownElements: {},
+      notReadElements: {},
+    };
   }
   const content = engine.selectNodes('/*/content', document)[0] as Element | undefined;
   if (!content) {
     notes.push('The document has no <content> element.');
-    return { schemaName, kind, structured: true, blocks: [], notes, unknownElements: {} };
+    return {
+      schemaName,
+      kind,
+      structured: true,
+      blocks: [],
+      notes,
+      unknownElements: {},
+      notReadElements: {},
+    };
   }
   const reader = new Reader(engine);
   const blocks = reader.readChildren(content, { n: 0, prefix: '' });
@@ -777,7 +839,25 @@ export function readContent(
       `${unknownTotal} element(s) of ${Object.keys(reader.unknown).length} kind(s) were kept as "unknown" (text only): ${Object.keys(reader.unknown).join(', ')}.`,
     );
   }
-  return { schemaName, kind, structured: true, blocks, notes, unknownElements: reader.unknown };
+  const notReadTotal = Object.values(reader.notRead).reduce((a, b) => a + b, 0);
+  if (notReadTotal > 0) {
+    notes.push(
+      `${notReadTotal} element(s) are present but their content was not read: ${Object.entries(
+        reader.notRead,
+      )
+        .map(([k, v]) => `${k} (${v})`)
+        .join(', ')}. The response does not contain what they say.`,
+    );
+  }
+  return {
+    schemaName,
+    kind,
+    structured: true,
+    blocks,
+    notes,
+    unknownElements: reader.unknown,
+    notReadElements: reader.notRead,
+  };
 }
 
 function readDataModuleInfoSchema(root: Element): string | undefined {

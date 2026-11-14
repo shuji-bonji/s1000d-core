@@ -798,7 +798,12 @@ describe('入力の形の検査（DraftInputError）', () => {
                 unit: 'EA',
                 text: '係員が持つ',
               },
-              { kind: 'document', title: '保守の手引き', text: 'KB-M-001' },
+              {
+                kind: 'document',
+                title: '保守の手引き',
+                text: 'KB-M-001',
+                reqTechInfoCategory: 'ti01',
+              },
               {
                 kind: 'document',
                 title: '指定席券売機',
@@ -806,7 +811,23 @@ describe('入力の形の検査（DraftInputError）', () => {
               },
               { kind: 'person', text: '係員', count: 2 },
               { kind: 'person', text: '補助者' },
+              {
+                kind: 'person',
+                man: 'A',
+                text: '整備員',
+                personCategoryCode: 'Operator',
+                skillLevelCode: 'sk02',
+                estimatedTime: '1,5',
+                estimatedTimeUnit: 'h',
+              },
+              { kind: 'person' },
               { kind: 'para', text: '発売を停止していること' },
+              {
+                kind: 'para',
+                id: 'cond-0001',
+                text: '電源を切ってあること',
+                refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-20-00-00A-520A-D' }],
+              },
             ],
           },
           { kind: 'step', text: 'x' },
@@ -815,12 +836,15 @@ describe('入力の形の検査（DraftInputError）', () => {
       ),
     );
     // XSD の順: 条件 → 人員 → 文書 → 支援機材 → 消耗品 → 予備品 → 安全
-    expect(xml.replace(/<dmCode [^>]*\/>/, '<dmCode/>')).toContain(
+    expect(xml.replace(/<dmCode [^>]*\/>/g, '<dmCode/>')).toContain(
       '<preliminaryRqmts>' +
-        '<reqCondGroup><reqCondNoRef><reqCond>発売を停止していること</reqCond></reqCondNoRef></reqCondGroup>' +
-        '<reqPersons><personnel numRequired="2"><trade>係員</trade></personnel><personnel><trade>補助者</trade></personnel></reqPersons>' +
+        '<reqCondGroup><reqCondNoRef><reqCond>発売を停止していること</reqCond></reqCondNoRef>' +
+        '<reqCondDm id="cond-0001"><reqCond>電源を切ってあること</reqCond><dmRef><dmRefIdent><dmCode/></dmRefIdent></dmRef></reqCondDm></reqCondGroup>' +
+        '<reqPersons><personnel numRequired="2"><trade>係員</trade></personnel><personnel><trade>補助者</trade></personnel>' +
+        '<person man="A"><personCategory personCategoryCode="Operator"/><personSkill skillLevelCode="sk02"/><trade>整備員</trade><estimatedTime unitOfMeasure="h">1,5</estimatedTime></person>' +
+        '<personnel/></reqPersons>' +
         '<reqTechInfoGroup>' +
-        '<reqTechInfo><externalPubRef><externalPubRefIdent><externalPubCode>KB-M-001</externalPubCode><externalPubTitle>保守の手引き</externalPubTitle></externalPubRefIdent></externalPubRef></reqTechInfo>' +
+        '<reqTechInfo reqTechInfoCategory="ti01"><externalPubRef><externalPubRefIdent><externalPubCode>KB-M-001</externalPubCode><externalPubTitle>保守の手引き</externalPubTitle></externalPubRefIdent></externalPubRef></reqTechInfo>' +
         '<reqTechInfo><dmRef><dmRefIdent><dmCode/></dmRefIdent><dmRefAddressItems><dmTitle><techName>指定席券売機</techName></dmTitle></dmRefAddressItems></dmRef></reqTechInfo>' +
         '</reqTechInfoGroup>' +
         '<reqSupportEquips><supportEquipDescrGroup><supportEquipDescr id="seq-0001"><name>保守鍵</name><identNumber><manufacturerCode>K0001</manufacturerCode><partAndSerialNumber><partNumber>KEY-01</partNumber></partAndSerialNumber></identNumber><reqQuantity unitOfMeasure="EA">1</reqQuantity><remarks><simplePara>係員が持つ</simplePara></remarks></supportEquipDescr></supportEquipDescrGroup></reqSupportEquips>' +
@@ -834,8 +858,18 @@ describe('入力の形の検査（DraftInputError）', () => {
 
   it('組み立てた preliminaryRqmts を読むと、同じ種類の節点が返る（書いて読んで同じ）', () => {
     const children: DraftNode[] = [
+      { kind: 'para', text: '発売を停止していること' },
       { kind: 'person', text: '係員', count: 2 },
-      { kind: 'document', title: '保守の手引き', text: 'KB-M-001' },
+      {
+        kind: 'person',
+        text: '整備員',
+        man: 'A',
+        personCategoryCode: 'Operator',
+        skillLevelCode: 'sk02',
+        estimatedTime: '1,5',
+        estimatedTimeUnit: 'h',
+      },
+      { kind: 'document', title: '保守の手引き', text: 'KB-M-001', reqTechInfoCategory: 'ti06' },
       {
         kind: 'equipment',
         title: '保守鍵',
@@ -864,6 +898,14 @@ describe('入力の形の検査（DraftInputError）', () => {
       ...(n.text !== undefined ? { text: n.text } : {}),
       ...(n.level !== undefined ? { level: n.level } : {}),
       ...(n.count !== undefined ? { count: n.count } : {}),
+      ...(n.man !== undefined ? { man: n.man } : {}),
+      ...(n.personCategoryCode !== undefined ? { personCategoryCode: n.personCategoryCode } : {}),
+      ...(n.skillLevelCode !== undefined ? { skillLevelCode: n.skillLevelCode } : {}),
+      ...(n.estimatedTime !== undefined ? { estimatedTime: n.estimatedTime } : {}),
+      ...(n.estimatedTimeUnit !== undefined ? { estimatedTimeUnit: n.estimatedTimeUnit } : {}),
+      ...(n.reqTechInfoCategory !== undefined
+        ? { reqTechInfoCategory: n.reqTechInfoCategory }
+        : {}),
       ...(n.quantity !== undefined ? { quantity: n.quantity } : {}),
       ...(n.unit !== undefined ? { unit: n.unit } : {}),
       ...(n.partNumber !== undefined ? { partNumber: n.partNumber } : {}),
@@ -871,7 +913,7 @@ describe('入力の形の検査（DraftInputError）', () => {
       ...(n.children.length > 0 ? { children: n.children.map(pick) } : {}),
     });
     expect(pre.children.map(pick)).toEqual(children);
-    expect(pre.children[1].refs).toEqual([
+    expect(pre.children[3].refs).toEqual([
       { kind: 'externalPubRef', target: 'KB-M-001', title: '保守の手引き' },
     ]);
   });
@@ -890,7 +932,17 @@ describe('入力の形の検査（DraftInputError）', () => {
     expect(req({ kind: 'equipment', title: '鍵', manufacturerCode: 'K0001' })).toMatchObject({
       path: '/body[1]/children[1]/quantity',
     });
-    expect(req({ kind: 'person' }).detail).toMatch(/needs text \(the role\) or count/);
+    // 人員: man があれば person（人数は持てない）。見積もり時間は単位が要る
+    expect(req({ kind: 'person', text: '係員', man: 'A', count: 2 }).path).toBe(
+      '/body[1]/children[1]/count',
+    );
+    expect(req({ kind: 'person', text: '係員', estimatedTime: '5' }).path).toBe(
+      '/body[1]/children[1]/estimatedTimeUnit',
+    );
+    // 条件の参照は dmRef か pmRef を 1 つ
+    expect(
+      req({ kind: 'para', text: '電源', refs: [{ kind: 'internalRef', target: 'a' }] }).detail,
+    ).toMatch(/takes a dmRef or a pmRef/);
     expect(req({ kind: 'person', text: '係員', count: 0 }).path).toBe('/body[1]/children[1]/count');
     expect(req({ kind: 'document' }).detail).toMatch(/needs a ref, or title/);
     expect(req({ kind: 'document', refs: [{ kind: 'internalRef', target: 'a' }] }).detail).toMatch(

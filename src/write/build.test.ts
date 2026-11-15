@@ -110,8 +110,7 @@ function fromDraft(nodes: DraftNode[], icns: Record<string, string>, counter: Co
         rows: n.rows,
         question: n.question,
         choices: n.choices?.map((c) => ({ text: c.text, next: c.next })),
-        // process の section が持つ dmRef は、reader は読まない
-        refs: n.kind === 'section' ? undefined : refs,
+        refs,
         children: fromDraft(
           admonitionText ? [{ kind: 'para', text: n.text }, ...kids] : kids,
           icns,

@@ -346,6 +346,20 @@ class Reader {
     return norm(parts.join(''));
   }
 
+  /**
+   * 文として読む要素の中にあるブロック要素を、節点として読む（`inlineText` が文に入れなかったもの）。
+   * S1000D では、リスト（`randomList`・`sequentialList`・`definitionList`）は `para` の中に書くのが普通である
+   */
+  private blockChildren(el: Element): ContentNode[] {
+    const out: ContentNode[] = [];
+    for (const c of elements(el)) {
+      if (this.refOf(c)) continue;
+      if (INLINE.has(c.nodeName) || !BLOCKS[c.nodeName]) out.push(...this.blockChildren(c));
+      else out.push(...this.readElement(c));
+    }
+    return out;
+  }
+
   private tableRows(table: Element): string[][] {
     const rows: string[][] = [];
     for (const row of this.engine.selectNodes('.//row', table)) {
@@ -381,6 +395,8 @@ class Reader {
     switch (kind) {
       case 'para':
         node.text = this.inlineText(el, refs);
+        // 段落の中のブロック要素（リスト・表・図・注意書きなど）は、文には入れず子として読む
+        node.children = this.blockChildren(el);
         break;
       case 'admonition':
         node.level = name as 'warning' | 'caution' | 'note';
@@ -522,6 +538,13 @@ class Reader {
             } else node.children.push(...this.readElement(c));
           }
         } else {
+          if (name === 'dmNode') {
+            // プロセスの節点が指す DM・PM・文書（dmNode の直下の参照）
+            for (const c of elements(el)) {
+              const r = this.refOf(c);
+              if (r) refs.push(r);
+            }
+          }
           node.children = this.readChildren(
             el,
             kind === 'section' ? { n: 0, prefix: '' } : stepCounter,

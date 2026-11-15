@@ -1,0 +1,77 @@
+/**
+ * 利用者が入手した S1000D の配布物（Bike Samples）で、本文の文字が読み取りの結果に残っているかを数える。
+ * 配布物は再配布できないため（DECISIONS D-03）、`S1000D_SPEC_TESTS=1` のときだけ動かす。
+ *
+ * 読む側は内容を落とさない（s1000d-stack の DECISIONS D-31）。まだ落としているものを数で固定し、
+ * 減らす方向にだけ動かす。数が減ったら、下の上限を新しい数に下げる。
+ */
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { measureTextCoverage } from '../__fixtures__/text-coverage.js';
+
+const enabled = process.env.S1000D_SPEC_TESTS === '1';
+const specDir = resolve(process.env.S1000D_SPEC_DIR ?? '../../specs/s1000d/issue-7');
+
+function findBikeDir(dir: string): string | undefined {
+  if (!existsSync(dir)) return undefined;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    const p = join(dir, e.name);
+    if (/bike/i.test(e.name) && readdirSync(p).some((n) => /^DMC-.*\.XML$/i.test(n))) return p;
+    const inner = findBikeDir(p);
+    if (inner) return inner;
+  }
+  return undefined;
+}
+
+/**
+ * 2026-11-15 の実測（本文を構造化して読む DM、59 件、テキスト節点 1,587 個）。
+ * - core 0.9.0: 読み取りの結果に無いテキスト節点 193 個、1 つも落とさずに読めた DM 28 件
+ *   （多かったのは、段落の中のリスト。`para` の中の `randomList`・`definitionList` などを読んでいなかった）
+ * - 段落の中のブロック要素を子として読むようにした後: 66 個、39 件
+ */
+const BASELINE = {
+  /** 本文を構造化して読む DM の数 */
+  measured: 59,
+  /** テキスト節点の数 */
+  total: 1587,
+  /** 読み取りの結果に無いテキスト節点の数の上限 */
+  lost: 66,
+  /** 1 つも落とさずに読めた DM の数の下限 */
+  clean: 39,
+};
+
+const bikeDir = findBikeDir(specDir);
+
+describe.skipIf(!enabled || !bikeDir)(
+  '本文の文字が読み取りの結果に残っているか（Bike Samples）',
+  () => {
+    it('読み取りの結果に無いテキスト節点の数が、記録した上限を超えない', () => {
+      let measured = 0;
+      let total = 0;
+      let lost = 0;
+      let clean = 0;
+      const byParent: Record<string, number> = {};
+      for (const f of readdirSync(bikeDir!).filter((n) => /^DMC-.*\.XML$/i.test(n))) {
+        const r = measureTextCoverage(readFileSync(join(bikeDir!, f), 'utf8'));
+        if (!r) continue;
+        measured++;
+        total += r.total;
+        lost += r.lost;
+        if (r.lost === 0) clean++;
+        for (const [k, v] of Object.entries(r.lostByParent)) byParent[k] = (byParent[k] ?? 0) + v;
+      }
+      const detail = Object.entries(byParent)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${v} ${k}`)
+        .join(', ');
+      expect(measured).toBe(BASELINE.measured);
+      expect(total).toBe(BASELINE.total);
+      expect(lost, `読み取りの結果に無いテキスト節点: ${detail}`).toBeLessThanOrEqual(
+        BASELINE.lost,
+      );
+      expect(clean).toBeGreaterThanOrEqual(BASELINE.clean);
+    });
+  },
+);

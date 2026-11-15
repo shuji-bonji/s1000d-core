@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.1 (2026-11-15)
+
+実在の技術マニュアルを変換した DM を読み直して見つかった、読み取りの抜けを直しました。読む側は内容を落とさない、という方針（s1000d-stack の DECISIONS D-31）に反していました。
+
+### 修正（`readContent` の結果が変わります）
+
+- **段落の中のリストなどを読みます。** `para`（`notePara`・`warningAndCautionPara`・`simplePara` などを含む）の中にあるブロック要素（`randomList`・`sequentialList`・`definitionList`・`attentionRandomList`・表・図・注意書き）を、その段落の節点の `children` として返します。これまでは文（`text`）に入れず、子としても読まず、`unknownElements` にも `notReadElements` にも数えていませんでした。S1000D ではリストを `para` の中に書くのが普通で、`buildContent` もそう書くので、core で作った DM の箇条書きと用語集が、読むと空の段落になっていました。
+- **プロセス DM の `dmNode` が指す DM を返します。** `dmNode` の直下の `dmRef`・`pmRef`・`externalPubRef` を、その節点（`kind: "section"`）の `refs` に入れます。これまでは題名だけを返していました。
+
+節点の数（`countNodes`、outline の `size`）が増えます。型と下書きの形は変えていません。
+
+### テスト
+
+- 本文のテキスト節点が読み取りの結果に残っているかを数えるテストを足しました（`src/content/coverage.spec.test.ts`。配布物を使うので `S1000D_SPEC_TESTS=1` のときだけ動きます）。Bike Samples の 59 件・1,587 個のうち、読み取りの結果に無いテキスト節点は 193 個 → 66 個、1 つも落とさずに読めた DM は 28 件 → 39 件です。残りは、プロセス DM の `displayText`、故障の `faultDescr`、品目の `partNumber` などです。
+
 ## 0.9.0 (2026-11-15)
 
 実在の技術マニュアルを使った確認で見つかった、プロセス DM の読み取りの不足を直しました（s1000d-stack の docs/notes/tm-eval-requests.md の RD-1）。既存の API は変えていません（下書きと読み取りの節点に、種類と任意の項目を足しました）。

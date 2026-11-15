@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { measureTextCoverage } from '../__fixtures__/text-coverage.js';
 import { countNodes, readContentFromXml } from './read.js';
 import type { ContentNode } from './types.js';
 
@@ -351,5 +352,47 @@ describe('readContent', () => {
       text: '中身',
     });
     expect(c.notes[0]).toMatch(/mysteryBlock/);
+  });
+
+  it('段落の中のリスト・定義リスト・注意書きの中のリストを、子の節点として読む（文を落とさない）', () => {
+    const xml = wrap(
+      'descript',
+      `<description>
+  <para>構成は次のとおり。<randomList><listItem><para>本体</para></listItem><listItem><para>扉。詳細は ${DMREF} を見る。</para></listItem></randomList></para>
+  <para><definitionList><title>用語</title><definitionListItem><listItemTerm>IC</listItemTerm><listItemDefinition><para>IC カード</para></listItemDefinition></definitionListItem></definitionList></para>
+  <warning><warningAndCautionPara>次を守る。<attentionRandomList><attentionRandomListItem><attentionListItemPara>電源を切る</attentionListItemPara></attentionRandomListItem></attentionRandomList></warningAndCautionPara></warning>
+</description>`,
+    );
+    const c = readContentFromXml(xml);
+    const [p1, p2, w] = c.blocks;
+    expect(p1).toMatchObject({ kind: 'para', text: '構成は次のとおり。' });
+    expect(p1!.children).toHaveLength(1);
+    expect(p1!.children[0]).toMatchObject({ kind: 'list', ordered: false });
+    expect(p1!.children[0]!.children.map((i) => i.text)).toEqual([
+      '本体',
+      expect.stringContaining('扉。詳細は'),
+    ]);
+    expect(p1!.children[0]!.children[1]!.refs?.[0]).toMatchObject({ kind: 'dmRef' });
+    expect(p2!.children[0]).toMatchObject({ kind: 'list', title: '用語' });
+    expect(p2!.children[0]!.children[0]).toMatchObject({ kind: 'definition', title: 'IC' });
+    expect(p2!.children[0]!.children[0]!.children[0]).toMatchObject({ text: 'IC カード' });
+    const inWarning = w!.children[0]!;
+    expect(inWarning).toMatchObject({ kind: 'para', text: '次を守る。' });
+    expect(inWarning.children[0]!.children[0]).toMatchObject({ text: '電源を切る' });
+    expect(c.unknownElements).toEqual({});
+    // 本文のテキスト節点は、すべて読み取りの結果のどこかにある
+    expect(measureTextCoverage(xml)).toEqual({ total: 11, lost: 0, lostByParent: {} });
+  });
+
+  it('process: dmNode の直下の参照（その節点が指す DM）を refs に返す', () => {
+    const c = readContentFromXml(
+      wrap(
+        'process',
+        `<process><dmSeq><dmNode><title>画面 1</title>${DMREF}</dmNode></dmSeq></process>`,
+      ),
+    );
+    const node = c.blocks[0]!.children[0]!;
+    expect(node).toMatchObject({ kind: 'section', title: '画面 1' });
+    expect(node.refs).toEqual([expect.objectContaining({ kind: 'dmRef', techName: '券売機' })]);
   });
 });

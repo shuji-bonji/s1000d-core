@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.0 (2026-11-16)
+
+Bike Samples の本文のうち、読み取りの結果に入っていなかった文を読むようにしました（s1000d-stack の DECISIONS D-31「読む側は落とさない」、docs/notes/tm-eval-progress.md）。読み取りの結果に無いテキスト節点は 66 個から 13 個になり、残りの 13 個はどれも `notReadElements` で知らせている要素の中にあります。次の版は 0.11.0 です（読み取りの結果が変わります）。
+
+### 変更（読み取りの結果が変わります）
+
+- **不具合の説明（`faultDescr`）を読みます。** `kind: "para"`・`element: "faultDescr"` の節点で、`text` が `descr` の文です。同じ親に `fault` があれば、`attrs.faultCode` にその `faultCode` を入れます（値は解釈しません）。これまでは何も返していませんでした。
+- **メニューの選択肢（`menuChoice`）の文を読みます。** `listItem` の節点の `text` に、`prompt` の文が入ります。これまでは空の `listItem` でした。
+- **利用者への知らせ（`message`）を読みます。** 中の `prompt` を 1 つずつ、`kind: "para"`・`element: "prompt"` の節点として返します。
+- **図の凡例（`figure/legend`）を読みます。** `figure` の節点の `children` に、凡例の定義リストなどが入ります。
+- **定義リストの見出し（`definitionListHeader`）を読みます。** `list` の節点の `attrs.termTitle`・`attrs.definitionTitle` に入ります。
+- **折り込み（`foldout`）を容れ物として辿ります。** 中の `figure`・`table` が、題名と `id` を持つ節点として返ります。これまでは `element: "foldout"` の `figure` 1 つになり、中の図の題名が落ちていました。
+- **外部の文書の版と発行日を読みます。** `externalPubRef` の参照（`ContentRef`）に `externalPubIssue`（`externalPubIssueInfo/externalPubIssue` の文）と `externalPubIssueDate`（`externalPubRefAddressItems/externalPubIssueDate` の文）を足しました。読めたときは、`notReadElements` に `externalPubIssueInfo`・`externalPubRefAddressItems` を入れません。
+- **入れ子の品目（`embeddedSupportEquipDescr`・`embeddedSupplyDescr`・`embeddedSpareDescr`）を読みます。** 親の品目の `children` に、同じ種類（`equipment`・`supply`・`spare`）の節点として入ります。これまでは `attrs.notRead` と `notReadElements` で知らせるだけでした。下書き（`DraftNode`）の品目は子を受け取らないので、書く側は変わりません。
+
+### 追加
+
+- プロセス DM の変数の宣言・代入・検査（`variableDeclarations`・`variablePreSet`・`variablePostSet`・`validate`・`assertion`）と、図の改訂の理由（`graphic/reasonForAmendment`）を、`notReadElements` に数えるようにしました。中身はこれまでどおり読みませんが、あることを知らせます。
+
+### テスト
+
+- 上の 8 つを確かめるテストを 4 件足しました（289 件。配布物を使う 39 件はスキップ）。
+- 配布物を使うテスト（`src/content/coverage.spec.test.ts`）の上限を、読み取りの結果に無いテキスト節点 66 個 → 13 個、1 つも落とさずに読めた DM 39 件 → 55 件に変えました。そのうち reader が知らせていないもの（`lostSilent`）が 0 個であることも確かめます。本文の先頭の適用性の文（`referencedApplicGroup`）は `readApplicStatements` が読むので、その結果も含めて数えます。
+
 ## 0.10.0 (2026-11-15)
 
 実在の技術マニュアルの消耗品の一覧が、品目を部品番号ではなく NATO 物品番号（NSN）で示していたので、品目の識別子として `natoStockNumber` を読み書きできるようにしました（s1000d-stack の docs/notes/tm-eval-progress.md）。次の版は 0.10.0 です（下書きと読み取りの節点に項目を足し、読み取りの結果が変わります）。

@@ -64,6 +64,10 @@ export interface ContentRef {
   fragment?: string;
   /** 参照自身の `@applicRefId` */
   applicRefId?: string;
+  /** externalPubRef が指す文書の版（`externalPubRefIdent/externalPubIssueInfo/externalPubIssue` の文。値は解釈しない） */
+  externalPubIssue?: string;
+  /** externalPubRef が指す文書の発行日（`externalPubRefAddressItems/externalPubIssueDate` の文。値は解釈しない） */
+  externalPubIssueDate?: string;
   /** internalRef の `@internalRefTargetType`、graphic の hotspot など */
   note?: string;
 }

@@ -39,6 +39,7 @@ const BLOCKS: Record<string, ContentNodeKind> = {
   paraBasic: 'para',
   action: 'para',
   descr: 'para',
+  faultDescr: 'para',
   randomList: 'list',
   sequentialList: 'list',
   definitionList: 'list',
@@ -51,7 +52,6 @@ const BLOCKS: Record<string, ContentNodeKind> = {
   definitionListItem: 'definition',
   table: 'table',
   figure: 'figure',
-  foldout: 'figure',
   multimedia: 'figure',
   warning: 'admonition',
   caution: 'admonition',
@@ -103,6 +103,10 @@ const TRANSPARENT = new Set([
   'dmLoop',
   'warningsAndCautions',
   'commonInfo',
+  // 折り込みページの容れ物。中の figure / table をそのまま読む
+  'foldout',
+  // 利用者への知らせ。中の prompt を 1 つずつ段落として読む
+  'message',
 ]);
 
 /** 読まない（識別・状態部に属する、または本文の意味に関わらない）要素 */
@@ -115,7 +119,6 @@ const SKIP = new Set([
   'title',
   'pmEntryTitle',
   'isolationStepQuestion',
-  'faultDescr',
   'fault',
   'colspec',
   'spanspec',
@@ -138,10 +141,18 @@ const SKIP = new Set([
   'assertion',
   'noAssertions',
   'variablePostSet',
-  'message',
   'warningRef',
   'cautionRef',
   'warningsAndCautionsRef',
+]);
+
+/** プロセス DM の変数の宣言・代入・検査。中身は読まないが、あることを `notReadElements` で知らせる */
+const LOGIC_NOT_READ = new Set([
+  'variableDeclarations',
+  'variablePreSet',
+  'variablePostSet',
+  'validate',
+  'assertion',
 ]);
 
 /** 行内要素（文の一部として読む） */
@@ -173,14 +184,14 @@ const INLINE = new Set([
   'realValue',
 ]);
 
-/** 品目（supportEquipDescr など）の子のうち、中身を読んでいない要素（識別子以外） */
-const ITEM_NOT_READ = new Set([
+/** 品目（supportEquipDescr など）の子のうち、中身を読んでいない要素（識別子以外）。入れ子の品目（embedded…Descr）は子の節点として読む */
+const ITEM_EMBEDDED = new Set([
   'embeddedSupportEquipDescr',
   'embeddedSupplyDescr',
   'embeddedSpareDescr',
-  'hazards',
-  'footnoteRemarks',
 ]);
+
+const ITEM_NOT_READ = new Set(['hazards', 'footnoteRemarks']);
 
 /** 品目（supportEquipDescr など）の識別子のうち、identNumber と natoStockNumber 以外の要素（要素名だけを返す） */
 const ITEM_IDENTIFIERS = new Set([
@@ -323,18 +334,45 @@ class Reader {
       case 'externalPubRef': {
         const code = this.engine.selectString('externalPubRefIdent/externalPubCode', el);
         const title = this.engine.selectString('externalPubRefIdent/externalPubTitle', el);
-        // 題名と番号だけを読む。発行情報（externalPubIssueInfo）などは読んでいない
-        this.markRefNotRead(el, ['externalPubRefIdent']);
+        // 番号・題名・版（externalPubIssueInfo/externalPubIssue の文）・発行日（externalPubIssueDate の文）を読む。
+        // ほかの発行情報（externalPubIssueInfo の属性、機密区分、責任者など）は読んでいない
         const ident = firstChild(el, 'externalPubRefIdent');
+        const items = firstChild(el, 'externalPubRefAddressItems');
+        const issue = this.engine.selectString(
+          'externalPubRefIdent/externalPubIssueInfo/externalPubIssue',
+          el,
+        );
+        const issueDate = this.engine.selectString(
+          'externalPubRefAddressItems/externalPubIssueDate',
+          el,
+        );
+        const issueRead = !!issue && norm(issue) !== '';
+        const dateRead = !!issueDate && norm(issueDate) !== '';
+        this.markRefNotRead(el, [
+          'externalPubRefIdent',
+          ...(dateRead ? ['externalPubRefAddressItems'] : []),
+        ]);
         if (ident)
-          for (const c of elements(ident))
-            if (c.nodeName !== 'externalPubCode' && c.nodeName !== 'externalPubTitle')
-              this.markNotRead(c.nodeName);
-        return {
+          for (const c of elements(ident)) {
+            if (c.nodeName === 'externalPubCode' || c.nodeName === 'externalPubTitle') continue;
+            if (c.nodeName === 'externalPubIssueInfo' && issueRead) {
+              for (const g of elements(c))
+                if (g.nodeName !== 'externalPubIssue') this.markNotRead(g.nodeName);
+              continue;
+            }
+            this.markNotRead(c.nodeName);
+          }
+        if (items && dateRead)
+          for (const c of elements(items))
+            if (c.nodeName !== 'externalPubIssueDate') this.markNotRead(c.nodeName);
+        const ref: ContentRef = {
           kind: 'externalPubRef',
           target: norm(code ?? title ?? ''),
           title: title ? norm(title) : undefined,
         };
+        if (issueRead) ref.externalPubIssue = norm(issue as string);
+        if (dateRead) ref.externalPubIssueDate = norm(issueDate as string);
+        return ref;
       }
       case 'graphic':
       case 'symbol':
@@ -344,6 +382,14 @@ class Reader {
       default:
         return undefined;
     }
+  }
+
+  /** prompt の文（中の paraBasic をつないだもの） */
+  private promptText(prompt: Element, refs: ContentRef[]): string {
+    return (this.engine.selectNodes('paraBasic', prompt) as Element[])
+      .map((p) => this.inlineText(p, refs))
+      .filter(Boolean)
+      .join(' ');
   }
 
   /** 行内の文を組み立てる。参照は `[→ …]` で埋め込み、refs に集める */
@@ -400,7 +446,24 @@ class Reader {
   /** 要素 1 つを節点にする。容れ物なら子をそのまま返す */
   readElement(el: Element, stepCounter?: { n: number; prefix: string }): ContentNode[] {
     const name = el.nodeName;
-    if (SKIP.has(name)) return [];
+    // message（利用者への知らせ）の prompt は、1 つずつ段落として読む。ほかの prompt は、親の dialog・menuChoice が文として読む
+    if (name === 'prompt' && (el.parentNode as Element | null)?.nodeName === 'message') {
+      const refs: ContentRef[] = [];
+      const text = this.promptText(el, refs);
+      const node: ContentNode = {
+        kind: 'para',
+        element: name,
+        children: [],
+        text,
+        location: describeLocation(el),
+      };
+      if (refs.length > 0) node.refs = refs;
+      return [node];
+    }
+    if (SKIP.has(name)) {
+      if (LOGIC_NOT_READ.has(name)) this.markNotRead(name);
+      return [];
+    }
     if (TRANSPARENT.has(name)) return this.readChildren(el, stepCounter);
     const kind: ContentNodeKind = BLOCKS[name] ?? 'unknown';
     if (kind === 'unknown') this.unknown[name] = (this.unknown[name] ?? 0) + 1;
@@ -419,6 +482,20 @@ class Reader {
 
     switch (kind) {
       case 'para':
+        if (name === 'faultDescr') {
+          // 不具合の説明: descr の文を text に、ほかの子（detailedFaultDescr など）は子として読む。
+          // 同じ親の fault の faultCode（不具合のコード。値は解釈しない）を attrs に残す
+          const descr = firstChild(el, 'descr');
+          node.text = descr ? this.inlineText(descr, refs) : '';
+          node.children = elements(el)
+            .filter((c) => c !== descr)
+            .flatMap((c) => this.readElement(c));
+          const parent = el.parentNode as Element | null;
+          const fault = parent ? firstChild(parent, 'fault') : undefined;
+          const code = fault ? attr(fault, 'faultCode') : undefined;
+          if (code) node.attrs = { faultCode: code };
+          break;
+        }
         node.text = this.inlineText(el, refs);
         // 段落の中のブロック要素（リスト・表・図・注意書きなど）は、文には入れず子として読む
         node.children = this.blockChildren(el);
@@ -430,9 +507,27 @@ class Reader {
       case 'list':
         node.ordered = name === 'sequentialList' || name === 'attentionSequentialList';
         node.children = this.readChildren(el);
+        if (name === 'definitionList') {
+          // 定義リストの見出し（用語の列と定義の列の題名）
+          const header = firstChild(el, 'definitionListHeader');
+          const termTitle = header && firstChild(header, 'termTitle');
+          const definitionTitle = header && firstChild(header, 'definitionTitle');
+          const attrs: Record<string, string> = {};
+          if (termTitle) attrs.termTitle = this.inlineText(termTitle, refs);
+          if (definitionTitle) attrs.definitionTitle = this.inlineText(definitionTitle, refs);
+          if (Object.keys(attrs).length > 0) node.attrs = attrs;
+        }
         break;
       case 'listItem': {
         // listItem は para を持つ。短い項目は text にまとめる
+        if (name === 'menuChoice') {
+          // メニューの選択肢: prompt の文を text に読む（assertion などの変数の操作は読まない）
+          const prompt = firstChild(el, 'prompt');
+          if (prompt) node.text = this.promptText(prompt, refs);
+          for (const c of elements(el))
+            if (LOGIC_NOT_READ.has(c.nodeName)) this.markNotRead(c.nodeName);
+          break;
+        }
         const kids = this.readChildren(el);
         if (kids.length === 1 && kids[0].kind === 'para' && kids[0].children.length === 0) {
           node.text = kids[0].text;
@@ -464,7 +559,13 @@ class Reader {
             if (hotspots.length > 0) r.note = `hotspots: ${hotspots.join(', ')}`;
             refs.push(r);
           }
+          // 図の改訂の理由（graphic/reasonForAmendment）は読んでいない
+          if (firstChild(g as Element, 'reasonForAmendment'))
+            this.markNotRead('reasonForAmendment');
         }
+        // 図の凡例（legend の中の定義リストなど）は子として読む
+        const legend = firstChild(el, 'legend');
+        if (legend) node.children = this.readChildren(legend);
         break;
       }
       case 'step': {
@@ -746,8 +847,8 @@ class Reader {
       out.push(n);
     }
 
-    const items = (kind: 'equipment' | 'supply' | 'spare', expr: string) => {
-      for (const d of this.engine.selectNodes(expr, el) as Element[]) {
+    const item = (kind: 'equipment' | 'supply' | 'spare', d: Element): ContentNode => {
+      {
         const n = base(kind, d);
         const name = str('name', d);
         if (name) n.title = name;
@@ -780,15 +881,22 @@ class Reader {
         put(attrs, 'shortName', str('shortName', d));
         put(attrs, 'materialUsage', attr(d, 'materialUsage'));
         put(attrs, 'supplyCategory', attr(d, 'supplyCategory'));
-        // 中身を読んでいない子（入れ子の品目、危険性、脚注）は、あることを知らせる
+        // 中身を読んでいない子（危険性、脚注）は、あることを知らせる
         const skipped = elements(d)
           .map((c) => c.nodeName)
           .filter((x) => ITEM_NOT_READ.has(x));
         for (const x of [...others, ...skipped]) this.markNotRead(x);
         if (skipped.length > 0) attrs.notRead = [...new Set(skipped)].join(' ');
         if (Object.keys(attrs).length > 0) n.attrs = attrs;
-        out.push(n);
+        // 入れ子の品目（工具のセットの中身など）は、同じ種類の子の節点として読む
+        n.children = elements(d)
+          .filter((c) => ITEM_EMBEDDED.has(c.nodeName))
+          .map((c) => item(kind, c));
+        return n;
       }
+    };
+    const items = (kind: 'equipment' | 'supply' | 'spare', expr: string) => {
+      for (const d of this.engine.selectNodes(expr, el) as Element[]) out.push(item(kind, d));
     };
     // 品目の脚注（グループの直下の footnote）は読んでいない
     const footnotes = this.engine.selectNodes(

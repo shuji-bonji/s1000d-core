@@ -381,7 +381,12 @@ describe('readContent', () => {
     expect(inWarning.children[0]!.children[0]).toMatchObject({ text: '電源を切る' });
     expect(c.unknownElements).toEqual({});
     // 本文のテキスト節点は、すべて読み取りの結果のどこかにある
-    expect(measureTextCoverage(xml)).toEqual({ total: 11, lost: 0, lostByParent: {} });
+    expect(measureTextCoverage(xml)).toEqual({
+      total: 11,
+      lost: 0,
+      lostSilent: 0,
+      lostByParent: {},
+    });
   });
 
   it('process: dmNode の直下の参照（その節点が指す DM）を refs に返す', () => {
@@ -427,6 +432,126 @@ describe('readContent', () => {
       ['2 つと参照', '9150-00-079-7374', { otherIdentifiers: 'natoStockNumber' }],
     ]);
     expect(c.notReadElements).toEqual({ natoStockNumber: 1, refs: 1 });
+    expect(c.unknownElements).toEqual({});
+  });
+
+  it('fault: 不具合の説明（faultDescr）を、faultCode を付けた段落として読む', () => {
+    const c = readContentFromXml(
+      wrap(
+        'fault',
+        `<faultReporting><isolatedFault id="f1"><fault faultCode="100FC01"/>
+        <faultDescr><descr>警告灯が点かない</descr></faultDescr></isolatedFault></faultReporting>`,
+      ),
+    );
+    expect(c.blocks.map((n) => [n.kind, n.element, n.text, n.attrs])).toEqual([
+      ['para', 'faultDescr', '警告灯が点かない', { faultCode: '100FC01' }],
+    ]);
+  });
+
+  it('process: メニューの選択肢と知らせ（message）の文を読み、変数の操作は知らせる', () => {
+    const c = readContentFromXml(
+      wrap(
+        'process',
+        `<process><variableDeclarations><variable variableName="level"><initialize><expression><stringValue>amateur</stringValue></expression></initialize></variable></variableDeclarations>
+        <dmSeq><dmNode id="n1"><dialog>
+          <menu><prompt><paraBasic>自転車に乗ったことがありますか</paraBasic></prompt>
+            <menuChoice><prompt><paraBasic>はい</paraBasic></prompt><assertion><variableRef variableName="level"/><expression><stringValue>experienced</stringValue></expression></assertion></menuChoice>
+            <menuChoice><prompt><paraBasic>いいえ</paraBasic></prompt><noAssertions/></menuChoice>
+          </menu>
+          <dialogGroup><message><prompt><paraBasic>年齢は 4 から 100 まで</paraBasic></prompt><prompt><paraBasic>すべて入力してください</paraBasic></prompt></message></dialogGroup>
+        </dialog></dmNode></dmSeq></process>`,
+      ),
+    );
+    const dialog = c.blocks[0]!.children[0]!.children[0]!;
+    const menu = dialog.children[0]!;
+    expect([menu.element, menu.text]).toEqual(['menu', '自転車に乗ったことがありますか']);
+    expect(menu.children.map((n) => [n.kind, n.element, n.text])).toEqual([
+      ['listItem', 'menuChoice', 'はい'],
+      ['listItem', 'menuChoice', 'いいえ'],
+    ]);
+    expect(dialog.children[1]!.children.map((n) => [n.kind, n.element, n.text])).toEqual([
+      ['para', 'prompt', '年齢は 4 から 100 まで'],
+      ['para', 'prompt', 'すべて入力してください'],
+    ]);
+    expect(c.notReadElements).toEqual({ variableDeclarations: 1, assertion: 1 });
+    expect(c.unknownElements).toEqual({});
+  });
+
+  it('descript: 図の凡例、定義リストの見出し、折り込みの図を読む', () => {
+    const c = readContentFromXml(
+      wrap(
+        'descript',
+        `<description>
+        <levelledPara><title>概要</title>
+          <para><definitionList><definitionListHeader><termTitle>部品</termTitle><definitionTitle>働き</definitionTitle></definitionListHeader>
+            <definitionListItem><listItemTerm>フレーム</listItemTerm><listItemDefinition><para>全体を支える</para></listItemDefinition></definitionListItem></definitionList></para>
+          <figure id="fig-1"><title>外観</title><graphic infoEntityIdent="ICN-K0001-00001-001-01"><reasonForAmendment>図を足した</reasonForAmendment></graphic>
+            <legend><definitionList><title>凡例</title>
+              <definitionListItem><listItemTerm>1</listItemTerm><listItemDefinition><para>表示</para></listItemDefinition></definitionListItem></definitionList></legend></figure>
+          <foldout><figure id="fig-2"><title>全体図</title><graphic infoEntityIdent="ICN-K0001-00002-001-01"/></figure></foldout>
+        </levelledPara></description>`,
+      ),
+    );
+    const [para, fig1, fig2] = c.blocks[0]!.children;
+    const list = para!.children[0]!;
+    expect([list.kind, list.attrs]).toEqual([
+      'list',
+      { termTitle: '部品', definitionTitle: '働き' },
+    ]);
+    expect(list.children.map((n) => [n.title, n.children[0]!.text])).toEqual([
+      ['フレーム', '全体を支える'],
+    ]);
+    expect([fig1!.kind, fig1!.title, fig1!.refs?.[0]?.target]).toEqual([
+      'figure',
+      '外観',
+      'ICN-K0001-00001-001-01',
+    ]);
+    const legend = fig1!.children[0]!;
+    expect([legend.kind, legend.title]).toEqual(['list', '凡例']);
+    expect(legend.children.map((n) => [n.title, n.children[0]!.text])).toEqual([['1', '表示']]);
+    // 折り込み（foldout）は容れ物として辿り、中の figure を題名つきで返す
+    expect([fig2!.kind, fig2!.element, fig2!.title, fig2!.refs?.[0]?.target]).toEqual([
+      'figure',
+      'figure',
+      '全体図',
+      'ICN-K0001-00002-001-01',
+    ]);
+    expect(c.notReadElements).toEqual({ reasonForAmendment: 1 });
+    expect(c.unknownElements).toEqual({});
+  });
+
+  it('proced: 外部の文書の版と発行日、入れ子の品目を読む', () => {
+    const c = readContentFromXml(
+      wrap(
+        'proced',
+        `<procedure><preliminaryRqmts><reqCondGroup><noConds/></reqCondGroup>
+        <reqTechInfoGroup><reqTechInfo><externalPubRef><externalPubRefIdent><externalPubCode>SafeS-12</externalPubCode><externalPubTitle>安全データシート</externalPubTitle>
+          <externalPubIssueInfo><externalPubIssue>2014</externalPubIssue></externalPubIssueInfo></externalPubRefIdent>
+          <externalPubRefAddressItems><externalPubIssueDate>January 2014</externalPubIssueDate></externalPubRefAddressItems></externalPubRef></reqTechInfo></reqTechInfoGroup>
+        <reqSupportEquips><supportEquipDescrGroup><supportEquipDescr><name>工具セット</name>
+          <identNumber><manufacturerCode>K0001</manufacturerCode><partAndSerialNumber><partNumber>SET-1</partNumber></partAndSerialNumber></identNumber><reqQuantity>1</reqQuantity>
+          <embeddedSupportEquipDescr id="e1"><name>のこぎり</name><identNumber><manufacturerCode>K0001</manufacturerCode><partAndSerialNumber><partNumber>SAW-1</partNumber></partAndSerialNumber></identNumber><reqQuantity>2</reqQuantity></embeddedSupportEquipDescr>
+        </supportEquipDescr></supportEquipDescrGroup></reqSupportEquips>
+        <reqSupplies><noSupplies/></reqSupplies><reqSpares><noSpares/></reqSpares><reqSafety><noSafety/></reqSafety></preliminaryRqmts>
+        <mainProcedure><proceduralStep><para>x</para></proceduralStep></mainProcedure>
+        <closeRqmts><reqCondGroup><noConds/></reqCondGroup></closeRqmts></procedure>`,
+      ),
+    );
+    const [doc, set] = c.blocks[0]!.children;
+    expect(doc!.refs).toEqual([
+      {
+        kind: 'externalPubRef',
+        target: 'SafeS-12',
+        title: '安全データシート',
+        externalPubIssue: '2014',
+        externalPubIssueDate: 'January 2014',
+      },
+    ]);
+    expect([set!.kind, set!.title, set!.attrs]).toEqual(['equipment', '工具セット', undefined]);
+    expect(
+      set!.children.map((n) => [n.kind, n.element, n.id, n.title, n.partNumber, n.quantity]),
+    ).toEqual([['equipment', 'embeddedSupportEquipDescr', 'e1', 'のこぎり', 'SAW-1', '2']]);
+    expect(c.notReadElements).toEqual({});
     expect(c.unknownElements).toEqual({});
   });
 });

@@ -30,6 +30,13 @@ function findBikeDir(dir: string): string | undefined {
  * - core 0.9.0: 読み取りの結果に無いテキスト節点 193 個、1 つも落とさずに読めた DM 28 件
  *   （多かったのは、段落の中のリスト。`para` の中の `randomList`・`definitionList` などを読んでいなかった）
  * - 段落の中のブロック要素を子として読むようにした後: 66 個、39 件
+ *
+ * 2026-11-16 の実測:
+ * - 適用性の文（referencedApplicGroup。`readApplicStatements` が読む）を読み取りの結果に含めて数え、
+ *   不具合の説明・メニューの選択肢・知らせ・図の凡例・定義リストの見出し・折り込みの図・
+ *   外部の文書の版と発行日・入れ子の品目を読むようにした後: 13 個、55 件。
+ *   残りの 13 個は、どれも reader が `notReadElements` で知らせている要素の中にある
+ *   （hazards 4、productionMaintData 4、variableDeclarations / variablePreSet 2、supplyRef・reasonForAmendment・footnote が各 1）
  */
 const BASELINE = {
   /** 本文を構造化して読む DM の数 */
@@ -37,9 +44,11 @@ const BASELINE = {
   /** テキスト節点の数 */
   total: 1587,
   /** 読み取りの結果に無いテキスト節点の数の上限 */
-  lost: 66,
+  lost: 13,
+  /** そのうち、reader が知らせていない（`notReadElements` に入っていない要素の中の）テキスト節点の数 */
+  lostSilent: 0,
   /** 1 つも落とさずに読めた DM の数の下限 */
-  clean: 39,
+  clean: 55,
 };
 
 const bikeDir = findBikeDir(specDir);
@@ -51,6 +60,7 @@ describe.skipIf(!enabled || !bikeDir)(
       let measured = 0;
       let total = 0;
       let lost = 0;
+      let lostSilent = 0;
       let clean = 0;
       const byParent: Record<string, number> = {};
       for (const f of readdirSync(bikeDir!).filter((n) => /^DMC-.*\.XML$/i.test(n))) {
@@ -59,6 +69,7 @@ describe.skipIf(!enabled || !bikeDir)(
         measured++;
         total += r.total;
         lost += r.lost;
+        lostSilent += r.lostSilent;
         if (r.lost === 0) clean++;
         for (const [k, v] of Object.entries(r.lostByParent)) byParent[k] = (byParent[k] ?? 0) + v;
       }
@@ -71,6 +82,7 @@ describe.skipIf(!enabled || !bikeDir)(
       expect(lost, `読み取りの結果に無いテキスト節点: ${detail}`).toBeLessThanOrEqual(
         BASELINE.lost,
       );
+      expect(lostSilent, `知らせていないテキスト節点: ${detail}`).toBe(BASELINE.lostSilent);
       expect(clean).toBeGreaterThanOrEqual(BASELINE.clean);
     });
   },

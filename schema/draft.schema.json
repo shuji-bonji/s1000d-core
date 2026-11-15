@@ -445,7 +445,12 @@
         },
         "manufacturerCode": {
           "type": "string",
-          "description": "equipment / supply / spare の製造者のコード（必須）"
+          "description": "equipment / supply / spare の製造者のコード（natoStockNumber が無いとき、または partNumber を書くときは必須）"
+        },
+        "natoStockNumber": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-?[0-9]{2}-?[0-9]{3}-?[0-9]{4}$",
+          "description": "equipment / supply / spare の NATO 物品番号（NSN）。数字 13 桁。4-2-3-4 桁をハイフンで区切って書ける"
         },
         "applicRefId": {
           "type": "string"

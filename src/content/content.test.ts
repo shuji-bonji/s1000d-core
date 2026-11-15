@@ -395,4 +395,38 @@ describe('readContent', () => {
     expect(node).toMatchObject({ kind: 'section', title: '画面 1' });
     expect(node.refs).toEqual([expect.objectContaining({ kind: 'dmRef', techName: '券売機' })]);
   });
+
+  it('proced: 品目の natoStockNumber を読む（属性、fullNatoStockNumber、要素の文。2 つ目と refs は知らせる）', () => {
+    const item = (name: string, ident: string) =>
+      `<supplyDescr><name>${name}</name>${ident}<reqQuantity>1</reqQuantity></supplyDescr>`;
+    const c = readContentFromXml(
+      wrap(
+        'proced',
+        `<procedure><preliminaryRqmts><reqCondGroup><noConds/></reqCondGroup>
+        <reqSupportEquips><noSupportEquips/></reqSupportEquips>
+        <reqSupplies><supplyDescrGroup>
+        ${item('属性', '<natoStockNumber natoSupplyClass="6850" natoCodificationBureau="00" natoItemIdentNumberCore="1817933"/>')}
+        ${item('属性と文字列', '<natoStockNumber natoSupplyClass="4920" natoCodificationBureau="99" natoItemIdentNumberCore="1234567"><fullNatoStockNumber>4920-99-123-4567</fullNatoStockNumber></natoStockNumber>')}
+        ${item('文字列だけ', '<natoStockNumber><fullNatoStockNumber>7920-00-140-0869</fullNatoStockNumber></natoStockNumber>')}
+        ${item('要素の文', '<natoStockNumber>6810-00-107-1510</natoStockNumber>')}
+        ${item('欠けた番号', '<natoStockNumber natoSupplyClass="1615"/>')}
+        ${item('2 つと参照', `<natoStockNumber natoSupplyClass="9150" natoCodificationBureau="00" natoItemIdentNumberCore="0797374"><refs>${DMREF}</refs></natoStockNumber><natoStockNumber natoSupplyClass="9150" natoCodificationBureau="00" natoItemIdentNumberCore="1866681"/>`)}
+        </supplyDescrGroup></reqSupplies>
+        <reqSpares><noSpares/></reqSpares><reqSafety><noSafety/></reqSafety></preliminaryRqmts>
+        <mainProcedure><proceduralStep><para>x</para></proceduralStep></mainProcedure>
+        <closeRqmts><reqCondGroup><noConds/></reqCondGroup></closeRqmts></procedure>`,
+      ),
+    );
+    const pre = c.blocks[0]!;
+    expect(pre.children.map((n) => [n.title, n.natoStockNumber, n.attrs])).toEqual([
+      ['属性', '6850-00-181-7933', undefined],
+      ['属性と文字列', '4920-99-123-4567', { fullNatoStockNumber: '4920-99-123-4567' }],
+      ['文字列だけ', '7920-00-140-0869', undefined],
+      ['要素の文', '6810-00-107-1510', undefined],
+      ['欠けた番号', '1615', undefined],
+      ['2 つと参照', '9150-00-079-7374', { otherIdentifiers: 'natoStockNumber' }],
+    ]);
+    expect(c.notReadElements).toEqual({ natoStockNumber: 1, refs: 1 });
+    expect(c.unknownElements).toEqual({});
+  });
 });

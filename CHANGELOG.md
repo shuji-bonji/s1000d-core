@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.10.0 (2026-11-15)
+
+実在の技術マニュアルの消耗品の一覧が、品目を部品番号ではなく NATO 物品番号（NSN）で示していたので、品目の識別子として `natoStockNumber` を読み書きできるようにしました（s1000d-stack の docs/notes/tm-eval-progress.md）。次の版は 0.10.0 です（下書きと読み取りの節点に項目を足し、読み取りの結果が変わります）。
+
+### 追加
+
+- 下書き（`DraftNode`）の `equipment`・`supply`・`spare` に `natoStockNumber`（任意）を足しました（JSON Schema も同じ）。数字 13 桁で、`6850-00-181-7933` のように 4-2-3-4 桁をハイフンで区切って書けます。
+  - `natoStockNumber` 要素の 3 つの属性（`@natoSupplyClass` 4 桁、`@natoCodificationBureau` 2 桁、`@natoItemIdentNumberCore` 7 桁）に分けて書きます。属性の型は `xs:int` ですが、仕様書の例（`natoCodificationBureau="00"`）と同じく、0 で始まる桁をそのまま書きます。`fullNatoStockNumber` は書きません。
+  - 13 桁の数字でなければ `DraftInputError`（`…/natoStockNumber`）です。
+  - `manufacturerCode` もあるときは、`natoStockNumber`、`identNumber` の順に両方を書きます。
+- 読み取りの節点（`ContentNode`）の `equipment`・`supply`・`spare` に `natoStockNumber` を足しました。3 つの属性があれば、書かれた値を `6850-00-181-7933` の形につなぎます（7 桁の番号は 3-4 桁に分けます。7 桁でなければそのまま）。属性が無ければ `fullNatoStockNumber`、それも無ければ要素の文を返します。属性と `fullNatoStockNumber` の両方があるときは、後者を `attrs.fullNatoStockNumber` に返します。
+- `requirements` の要約の文（`text`）の品目に、`NSN 6850-00-181-7933` を入れます。
+
+### 変更
+
+- 品目に要る識別子が、「`manufacturerCode`」から「`natoStockNumber` か `manufacturerCode` のどちらか 1 つ以上」になりました。どちらも無い品目は、これまでどおり `DraftInputError`（`…/manufacturerCode`）です。`partNumber` を書くときは、`natoStockNumber` があっても `manufacturerCode` が要ります（`identNumber` に必須のため）。
+- `natoStockNumber` を持つ品目を読んだとき、`attrs.otherIdentifiers` と `notReadElements` に `natoStockNumber` を入れなくなりました（中身を読むようになったため）。同じ品目の 2 つ目からの `natoStockNumber` と、`natoStockNumber` の子の `refs` は読んでいないので、`notReadElements` に数えます。
+
+### テスト
+
+- 書いた `natoStockNumber` を読み直して同じ番号が返ること、読み取りの 6 つの形（属性、属性と文字列、文字列だけ、要素の文、欠けた番号、2 つと参照）を確かめるテストを足しました（285 件。配布物を使う 39 件はスキップ）。
+
 ## 0.9.1 (2026-11-15)
 
 実在の技術マニュアルを変換した DM を読み直して見つかった、読み取りの抜けを直しました。読む側は内容を落とさない、という方針（s1000d-stack の DECISIONS D-31）に反していました。

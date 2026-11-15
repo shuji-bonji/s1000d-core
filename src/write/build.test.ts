@@ -917,6 +917,59 @@ describe('入力の形の検査（DraftInputError）', () => {
     ]);
   });
 
+  it('品目の natoStockNumber を 3 つの属性に書き、読むと同じ番号が返る', () => {
+    const children: DraftNode[] = [
+      // NSN だけ（部品番号の無い品目）
+      {
+        kind: 'supply',
+        title: '柔軟なじょうご',
+        quantity: 'As required',
+        natoStockNumber: '4940-01-120-6793',
+      },
+      // NSN と identNumber の両方。数字だけで書いた NSN は、0 で始まる桁をそのまま書く
+      {
+        kind: 'supply',
+        title: '燃料',
+        quantity: 'As required',
+        natoStockNumber: '9140000000184',
+        partNumber: 'AA 52557',
+        manufacturerCode: '58536',
+      },
+      { kind: 'equipment', title: '懐中電灯', quantity: '1', natoStockNumber: '6230-00-163-1856' },
+      { kind: 'spare', title: 'フィルター', quantity: '1', natoStockNumber: '1660-99-783-4056' },
+    ];
+    const draft = F.procedDraft();
+    draft.body = [
+      { kind: 'requirements', children },
+      { kind: 'step', text: 'x' },
+    ];
+    const { xml } = buildDataModule(draft, F.kenbaikiAllocation(), {
+      defaultBrexRef: { dmCode: defaultBrex },
+    });
+    // 整形された XML から、要素の間の空白を取り除いて比べる
+    const flat = xml.replace(/>\s+</g, '><');
+    expect(flat).toContain(
+      '<supplyDescr><name>柔軟なじょうご</name><natoStockNumber natoSupplyClass="4940" natoCodificationBureau="01" natoItemIdentNumberCore="1206793"/><reqQuantity>As required</reqQuantity></supplyDescr>',
+    );
+    expect(flat).toContain(
+      '<supplyDescr><name>燃料</name><natoStockNumber natoSupplyClass="9140" natoCodificationBureau="00" natoItemIdentNumberCore="0000184"/><identNumber><manufacturerCode>58536</manufacturerCode><partAndSerialNumber><partNumber>AA 52557</partNumber></partAndSerialNumber></identNumber><reqQuantity>As required</reqQuantity></supplyDescr>',
+    );
+    const content = readContentFromXml(xml);
+    const pre = content.blocks[0];
+    expect(
+      pre.children.map((n) => [n.kind, n.title, n.natoStockNumber, n.manufacturerCode, n.attrs]),
+    ).toEqual([
+      ['equipment', '懐中電灯', '6230-00-163-1856', undefined, undefined],
+      ['supply', '柔軟なじょうご', '4940-01-120-6793', undefined, undefined],
+      ['supply', '燃料', '9140-00-000-0184', '58536', undefined],
+      ['spare', 'フィルター', '1660-99-783-4056', undefined, undefined],
+    ]);
+    expect(pre.text).toContain('柔軟なじょうご NSN 4940-01-120-6793 xAs required');
+    expect(pre.text).toContain('燃料 P/N AA 52557 NSN 9140-00-000-0184 xAs required');
+    expect(content.notReadElements).toEqual({});
+    expect(content.unknownElements).toEqual({});
+  });
+
   it('人員の適用性は reqPersons にまとめ、参照は版・言語・場所・適用性を書く', () => {
     const xml = serialize(
       buildContent('proced', [
@@ -996,6 +1049,20 @@ describe('入力の形の検査（DraftInputError）', () => {
     expect(req({ kind: 'supply', title: 'ウエス', quantity: '1' })).toMatchObject({
       path: '/body[1]/children[1]/manufacturerCode',
     });
+    // 部品番号は identNumber に書くので、製造者のコードが要る（NSN があっても同じ）
+    expect(
+      req({
+        kind: 'supply',
+        title: 'ウエス',
+        quantity: '1',
+        partNumber: '8722-0088',
+        natoStockNumber: '7920-00-140-0869',
+      }),
+    ).toMatchObject({ path: '/body[1]/children[1]/manufacturerCode' });
+    // NSN は 13 桁の数字。ハイフンは 4-2-3-4 桁の間だけ
+    expect(
+      req({ kind: 'supply', title: 'ウエス', quantity: '1', natoStockNumber: '7920-00-140-869' }),
+    ).toMatchObject({ path: '/body[1]/children[1]/natoStockNumber' });
     expect(req({ kind: 'equipment', title: '鍵', manufacturerCode: 'K0001' })).toMatchObject({
       path: '/body[1]/children[1]/quantity',
     });

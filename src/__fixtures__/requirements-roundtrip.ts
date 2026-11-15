@@ -120,7 +120,13 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
     case 'supply':
     case 'spare':
       if (n.applicRefId !== undefined) Object.assign(id, { applicRefId: n.applicRefId });
-      if (!n.manufacturerCode) return { reason: `${n.kind} without identNumber/manufacturerCode` };
+      if (!n.manufacturerCode && !n.natoStockNumber)
+        return { reason: `${n.kind} without identNumber/manufacturerCode` };
+      if (
+        n.natoStockNumber !== undefined &&
+        !/^\d{4}-?\d{2}-?\d{3}-?\d{4}$/.test(n.natoStockNumber)
+      )
+        return { reason: `${n.kind} with an incomplete natoStockNumber` };
       if (!n.quantity) return { reason: `${n.kind} without reqQuantity text` };
       return {
         node: {
@@ -131,7 +137,8 @@ function toDraft(n: ContentNode): { node?: DraftNode; reason?: string } {
           quantity: n.quantity,
           ...(n.unit !== undefined ? { unit: n.unit } : {}),
           ...(n.partNumber !== undefined ? { partNumber: n.partNumber } : {}),
-          manufacturerCode: n.manufacturerCode,
+          ...(n.manufacturerCode ? { manufacturerCode: n.manufacturerCode } : {}),
+          ...(n.natoStockNumber !== undefined ? { natoStockNumber: n.natoStockNumber } : {}),
         },
       };
     case 'admonition': {
@@ -229,6 +236,7 @@ const READ_ELEMENTS = new Set([
   'spareDescr',
   'identNumber',
   'partAndSerialNumber',
+  'natoStockNumber',
   'reqSafety',
   'noSafety',
   'safetyRqmts',
@@ -246,6 +254,7 @@ const READ_SUBTREES = new Set([
   'shortName',
   'manufacturerCode',
   'partNumber',
+  'fullNatoStockNumber',
   'reqQuantity',
   'remarks',
   'warning',
@@ -300,6 +309,7 @@ const READ_ATTRIBUTES: Record<string, string[]> = {
   supportEquipDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage'],
   supplyDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage', 'supplyCategory'],
   spareDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage'],
+  natoStockNumber: ['natoSupplyClass', 'natoCodificationBureau', 'natoItemIdentNumberCore'],
   reqQuantity: ['unitOfMeasure'],
   safetyRqmts: ['warningRefs', 'cautionRefs'],
   warning: ['id', 'applicRefId', 'securityClassification'],

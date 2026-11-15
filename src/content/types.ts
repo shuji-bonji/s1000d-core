@@ -105,6 +105,11 @@ export interface ContentNode {
   /** equipment / supply / spare の部品番号と製造者のコード（`identNumber`） */
   partNumber?: string;
   manufacturerCode?: string;
+  /**
+   * equipment / supply / spare の NATO 物品番号（`natoStockNumber`）。3 つの属性があれば、書かれた値を
+   * "6850-00-181-7933" の形（7 桁の番号は 3-4 桁）につなぐ。属性が無ければ `fullNatoStockNumber`、それも無ければ要素の文。値は解釈しない
+   */
+  natoStockNumber?: string;
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */
   applicRefId?: string;
   /** 要素自身の `@securityClassification`（機密区分。値は解釈しない。無ければ親または DM 全体の区分に従う） */

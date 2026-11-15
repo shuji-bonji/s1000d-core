@@ -47,7 +47,10 @@ export type DraftNodeKind =
    * `reqTechInfoCategory` は区分（値は解釈しない）
    */
   | 'document'
-  /** requirements の子: 試験器材・工具（supportEquipDescr）。`title` が名前。`manufacturerCode` と `quantity` が要る */
+  /**
+   * requirements の子: 試験器材・工具（supportEquipDescr）。`title` が名前。
+   * 識別子（`natoStockNumber` か `manufacturerCode` のどちらか 1 つ以上）と `quantity` が要る
+   */
   | 'equipment'
   /** requirements の子: 材料・消耗品（supplyDescr）。項目は equipment と同じ */
   | 'supply'
@@ -163,8 +166,17 @@ export interface DraftNode {
   unit?: string;
   /** equipment / supply / spare の部品番号（`identNumber/partAndSerialNumber/partNumber`） */
   partNumber?: string;
-  /** equipment / supply / spare の製造者のコード（`identNumber/manufacturerCode`。必須: 品目には識別子が要る） */
+  /**
+   * equipment / supply / spare の製造者のコード（`identNumber/manufacturerCode`）。
+   * 品目には識別子が要るので、`natoStockNumber` が無いときは必須。`partNumber` を書くときも必須
+   */
   manufacturerCode?: string;
+  /**
+   * equipment / supply / spare の NATO 物品番号（NSN）。数字 13 桁で、"6850-00-181-7933" のように
+   * 4-2-3-4 桁をハイフンで区切って書ける。`natoStockNumber` の 3 つの属性
+   * （`@natoSupplyClass` 4 桁・`@natoCodificationBureau` 2 桁・`@natoItemIdentNumberCore` 7 桁）に、書かれた桁のまま分けて書く
+   */
+  natoStockNumber?: string;
   applicRefId?: string;
   /** 要素自身の機密区分（値は解釈しない） */
   securityClassification?: string;

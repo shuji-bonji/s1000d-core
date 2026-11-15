@@ -182,10 +182,9 @@ const ITEM_NOT_READ = new Set([
   'footnoteRemarks',
 ]);
 
-/** 品目（supportEquipDescr など）の識別子のうち、identNumber 以外の要素 */
+/** 品目（supportEquipDescr など）の識別子のうち、identNumber と natoStockNumber 以外の要素（要素名だけを返す） */
 const ITEM_IDENTIFIERS = new Set([
   'catalogSeqNumberRef',
-  'natoStockNumber',
   'toolRef',
   'materialSetRef',
   'supplyRef',
@@ -222,6 +221,32 @@ class Reader {
 
   private markNotRead(name: string): void {
     this.notRead[name] = (this.notRead[name] ?? 0) + 1;
+  }
+
+  /**
+   * natoStockNumber を読む。`value` は、3 つの属性があればそれを書かれた値のままつないだもの
+   * （7 桁の番号は 3-4 桁に分ける）、無ければ `fullNatoStockNumber`、それも無ければ要素の文。
+   * 属性と `fullNatoStockNumber` の両方があるときは、後者を `full` に返す。`refs` は読んでいない（`mark` が真なら、そのことを数える）
+   */
+  private natoStockNumber(el: Element, mark = true): { value?: string; full?: string } {
+    const nsc = attr(el, 'natoSupplyClass');
+    const ncb = attr(el, 'natoCodificationBureau');
+    const core = attr(el, 'natoItemIdentNumberCore');
+    const fullEl = firstChild(el, 'fullNatoStockNumber');
+    const full = fullEl ? norm(fullEl.textContent ?? '') : '';
+    if (mark && firstChild(el, 'refs')) this.markNotRead('refs');
+    const parts = [
+      nsc,
+      ncb,
+      core && /^\d{7}$/.test(core) ? `${core.slice(0, 3)}-${core.slice(3)}` : core,
+    ].filter((x): x is string => x !== undefined);
+    if (parts.length > 0) return { value: parts.join('-'), ...(full ? { full } : {}) };
+    if (full) return { value: full };
+    const text = Array.from(el.childNodes)
+      .filter((c) => c.nodeType === 3)
+      .map((c) => c.textContent ?? '')
+      .join('');
+    return norm(text) ? { value: norm(text) } : {};
   }
 
   /** 参照（dmRef など）の子のうち、読んでいる要素（`read`）以外を「読んでいない」として数える */
@@ -730,6 +755,9 @@ class Reader {
         if (mfc) n.manufacturerCode = mfc;
         const pn = str('identNumber/partAndSerialNumber/partNumber', d);
         if (pn) n.partNumber = pn;
+        const nsns = elements(d).filter((c) => c.nodeName === 'natoStockNumber');
+        const nsn = nsns[0] ? this.natoStockNumber(nsns[0]) : undefined;
+        if (nsn?.value) n.natoStockNumber = nsn.value;
         const qty = str('reqQuantity', d);
         if (qty) n.quantity = qty;
         const unit = str('reqQuantity/@unitOfMeasure', d);
@@ -738,12 +766,17 @@ class Reader {
           .map((r) => deepText(r))
           .filter(Boolean);
         if (remarks.length > 0) n.text = remarks.join(' ');
-        // identNumber 以外の識別子は、要素名だけを残す（中身は読んでいない）
-        const others = elements(d)
-          .map((c) => c.nodeName)
-          .filter((x) => ITEM_IDENTIFIERS.has(x));
+        // identNumber と natoStockNumber 以外の識別子は、要素名だけを残す（中身は読んでいない）。
+        // natoStockNumber も、2 つ目からは読んでいない
+        const others = [
+          ...elements(d)
+            .map((c) => c.nodeName)
+            .filter((x) => ITEM_IDENTIFIERS.has(x)),
+          ...nsns.slice(1).map((c) => c.nodeName),
+        ];
         const attrs: Record<string, string> = {};
         if (others.length > 0) attrs.otherIdentifiers = [...new Set(others)].join(' ');
+        if (nsn?.full) attrs.fullNatoStockNumber = nsn.full;
         put(attrs, 'shortName', str('shortName', d));
         put(attrs, 'materialUsage', attr(d, 'materialUsage'));
         put(attrs, 'supplyCategory', attr(d, 'supplyCategory'));
@@ -822,8 +855,15 @@ class Reader {
             .map((i) => {
               const name = this.engine.selectString('name', i);
               const pn = this.engine.selectString('identNumber/partAndSerialNumber/partNumber', i);
+              const nsnEl = firstChild(i, 'natoStockNumber');
+              const nsn = nsnEl ? this.natoStockNumber(nsnEl, false).value : undefined;
               const qty = this.engine.selectString('reqQuantity', i);
-              return [name && norm(name), pn && `P/N ${norm(pn)}`, qty && `x${norm(qty)}`]
+              return [
+                name && norm(name),
+                pn && `P/N ${norm(pn)}`,
+                nsn && `NSN ${nsn}`,
+                qty && `x${norm(qty)}`,
+              ]
                 .filter(Boolean)
                 .join(' ');
             })

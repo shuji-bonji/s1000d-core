@@ -118,14 +118,33 @@ const FIELDS: Record<DraftNodeKind, readonly (keyof DraftNode)[]> = {
     'estimatedTimeUnit',
   ],
   document: ['title', 'text', 'refs', 'reqTechInfoCategory'],
-  equipment: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
-  supply: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
-  spare: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode'],
+  equipment: [
+    'title',
+    'text',
+    'quantity',
+    'unit',
+    'partNumber',
+    'manufacturerCode',
+    'natoStockNumber',
+  ],
+  supply: [
+    'title',
+    'text',
+    'quantity',
+    'unit',
+    'partNumber',
+    'manufacturerCode',
+    'natoStockNumber',
+  ],
+  spare: ['title', 'text', 'quantity', 'unit', 'partNumber', 'manufacturerCode', 'natoStockNumber'],
   sequence: ['children'],
   if: ['question', 'children'],
   dialog: ['title', 'text', 'choices'],
   entry: ['title', 'text', 'refs'],
 };
+
+/** NATO 物品番号（NSN）: 数字 13 桁。4-2-3-4 桁の間にハイフンを書ける */
+const NSN = /^(\d{4})-?(\d{2})-?(\d{3})-?(\d{4})$/;
 
 const COMMON_FIELDS = new Set<string>(['kind', 'id', 'applicRefId', 'securityClassification']);
 
@@ -878,9 +897,9 @@ export class Writer {
   }
 
   /**
-   * reqSupportEquips / reqSupplies / reqSpares: 品目を name・identNumber・reqQuantity（・remarks）に書く。無ければ「なし」の要素。
+   * reqSupportEquips / reqSupplies / reqSpares: 品目を name・natoStockNumber・identNumber・reqQuantity（・remarks）に書く。無ければ「なし」の要素。
    * XSD は品目に識別子を 1 つ以上と reqQuantity を要求する。値を補うことはしないので、
-   * `manufacturerCode`（identNumber に必須）か `quantity` が無い品目は DraftInputError にする
+   * 識別子（`natoStockNumber` か、identNumber に必須の `manufacturerCode`）が 1 つも無い品目と、`quantity` が無い品目は DraftInputError にする
    */
   private reqItems(
     req: { node: DraftNode; path: string } | undefined,
@@ -905,10 +924,27 @@ export class Writer {
     }
     const g = this.el(group);
     for (const { c, path } of found) {
-      if (c.manufacturerCode === undefined || c.manufacturerCode === '') {
+      const hasNsn = c.natoStockNumber !== undefined && c.natoStockNumber !== '';
+      const hasMfc = c.manufacturerCode !== undefined && c.manufacturerCode !== '';
+      if (!hasNsn && !hasMfc) {
         throw new DraftInputError(
           `${path}/manufacturerCode`,
-          `a "${kind}" node needs manufacturerCode (the schema requires an identifier for each item; none is made up here)`,
+          c.partNumber !== undefined
+            ? `a "${kind}" node with partNumber needs manufacturerCode (identNumber requires it; none is made up here)`
+            : `a "${kind}" node needs natoStockNumber or manufacturerCode (the schema requires an identifier for each item; none is made up here)`,
+        );
+      }
+      if (c.partNumber !== undefined && !hasMfc) {
+        throw new DraftInputError(
+          `${path}/manufacturerCode`,
+          `a "${kind}" node with partNumber needs manufacturerCode (identNumber requires it; none is made up here)`,
+        );
+      }
+      const nsn = hasNsn ? NSN.exec(c.natoStockNumber as string) : null;
+      if (hasNsn && !nsn) {
+        throw new DraftInputError(
+          `${path}/natoStockNumber`,
+          'natoStockNumber must be 13 digits, optionally written as 4-2-3-4 with hyphens (e.g. "6850-00-181-7933")',
         );
       }
       if (c.quantity === undefined || c.quantity === '') {
@@ -919,14 +955,26 @@ export class Writer {
       }
       const d = this.common(this.el(descr), c);
       if (c.title !== undefined) d.appendChild(this.textEl('name', c.title));
-      const ident = this.el('identNumber');
-      ident.appendChild(this.textEl('manufacturerCode', c.manufacturerCode));
-      if (c.partNumber !== undefined) {
-        const pn = this.el('partAndSerialNumber');
-        pn.appendChild(this.textEl('partNumber', c.partNumber));
-        ident.appendChild(pn);
+      if (nsn) {
+        // 3 つの属性は xs:int だが、仕様書の例（natoCodificationBureau="00"）と同じく、0 で始まる桁をそのまま書く
+        d.appendChild(
+          this.el('natoStockNumber', {
+            natoSupplyClass: nsn[1],
+            natoCodificationBureau: nsn[2],
+            natoItemIdentNumberCore: `${nsn[3]}${nsn[4]}`,
+          }),
+        );
       }
-      d.appendChild(ident);
+      if (hasMfc) {
+        const ident = this.el('identNumber');
+        ident.appendChild(this.textEl('manufacturerCode', c.manufacturerCode as string));
+        if (c.partNumber !== undefined) {
+          const pn = this.el('partAndSerialNumber');
+          pn.appendChild(this.textEl('partNumber', c.partNumber));
+          ident.appendChild(pn);
+        }
+        d.appendChild(ident);
+      }
       d.appendChild(this.textEl('reqQuantity', c.quantity, { unitOfMeasure: c.unit }));
       if (c.text !== undefined) {
         const remarks = this.el('remarks');

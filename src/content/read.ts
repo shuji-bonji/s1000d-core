@@ -63,6 +63,8 @@ const BLOCKS: Record<string, ContentNodeKind> = {
   preliminaryRqmts: 'requirements',
   closeRqmts: 'requirements',
   dmSeq: 'sequence',
+  // 繰り返し。条件の式は attrs.expression、子は前の代入・繰り返す dmSeq・後ろの代入
+  dmLoop: 'sequence',
   dmIf: 'if',
   dialog: 'dialog',
   dialogGroup: 'dialog',
@@ -101,7 +103,6 @@ const TRANSPARENT = new Set([
   'dmSeqAlts',
   'dmThenSeq',
   'dmElseSeq',
-  'dmLoop',
   'warningsAndCautions',
   'commonInfo',
   // 折り込みページの容れ物。中の figure / table をそのまま読む
@@ -639,8 +640,11 @@ class Reader {
           const vars = elements(expression).filter((c) => c.nodeName === 'variableRef');
           const v = vars.length === 1 ? attr(vars[0], 'variableName') : undefined;
           if (v && elements(expression).length === 1) node.attrs = { variableName: v };
+          // 式そのものは、書かれた値と演算の名前を並べた文にして attrs.expression に入れる（question は人が書いた文だけ）
+          const text = this.expressionText(expression);
+          if (text !== undefined) node.attrs = { ...(node.attrs ?? {}), expression: text };
         }
-        // 条件を読めた expression は子に残さない。読めなかった式（文が無く、変数 1 つでもない）は unknown として残す
+        // 条件を読めた expression は子に残さない。読めなかった式（文が無く、文にもできない）は unknown として残す
         const conditionRead = node.question !== undefined || node.attrs !== undefined;
         node.children = [];
         for (const c of elements(el)) {
@@ -685,10 +689,24 @@ class Reader {
               if (r) refs.push(r);
             }
           }
-          node.children = this.readChildren(
-            el,
-            kind === 'section' ? { n: 0, prefix: '' } : stepCounter,
-          );
+          // dmLoop の条件の式は attrs.expression に入れ、子に残さない。文にできない式は unknown として残す
+          let loopCondition: Element | undefined;
+          if (name === 'dmLoop') {
+            const expression = firstChild(el, 'expression');
+            const text = expression ? this.expressionText(expression) : undefined;
+            if (expression && text !== undefined) {
+              loopCondition = expression;
+              node.attrs = { ...(node.attrs ?? {}), expression: text };
+              const readable = attr(expression, 'humanReadableForm');
+              if (readable) node.attrs.humanReadableForm = norm(readable);
+            }
+          }
+          const counter = kind === 'section' ? { n: 0, prefix: '' } : stepCounter;
+          node.children = loopCondition
+            ? elements(el)
+                .filter((c) => c !== loopCondition)
+                .flatMap((c) => this.readElement(c, counter))
+            : this.readChildren(el, counter);
           if (kind === 'unknown' && node.children.length === 0)
             node.text = this.inlineText(el, refs);
         }
@@ -929,7 +947,8 @@ class Reader {
 
   /**
    * 式（expression）を、書かれた値と演算の名前を並べた文にする。評価はしない。
-   * 2 項の演算は `(左 演算 右)`、関数は `名前(式)`、変数は名前、文字列は引用符付き、集合は `{a, b}`。
+   * 2 項の演算は `(左 演算 右)`、関数は `名前(式)`、変数は名前、文字列は引用符付き、集合は `{a, b}`、
+   * 適用性の条件（assert）は `assert(識別子 種類 "値")`。
    * 知らない要素があれば undefined（呼び出し側が `notReadElements` に数える）
    */
   private expressionText(el: Element, top = true): string | undefined {
@@ -949,6 +968,17 @@ class Reader {
           return firstChild(c, 'trueValue') ? 'true' : firstChild(c, 'falseValue') ? 'false' : '';
         case 'noValue':
           return 'noValue';
+        case 'assert': {
+          // 適用性の条件: `assert(識別子 種類 "値")`。属性が無く文だけの assert は `assert("文")`
+          const parts = [attr(c, 'applicPropertyIdent'), attr(c, 'applicPropertyType')].filter(
+            (v): v is string => !!v,
+          );
+          const values = attr(c, 'applicPropertyValues');
+          if (values !== undefined) parts.push(JSON.stringify(values));
+          const text = norm(c.textContent ?? '');
+          if (parts.length === 0 && text) parts.push(JSON.stringify(text));
+          return parts.length > 0 ? `assert(${parts.join(' ')})` : undefined;
+        }
         case 'setValue': {
           const items = elements(c).map(one);
           return items.some((i) => i === undefined) ? undefined : `{${items.join(', ')}}`;

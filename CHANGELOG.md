@@ -10,8 +10,11 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
 - **品目のほかの識別子を読みます。** `toolRef`・`supplyRef`・`supplyRqmtRef`・`materialSetRef`・`catalogSeqNumberRef`・`partRef`・`functionalItemRef` と、2 つ目からの `natoStockNumber` を、節点の `identifiers`（`ContentIdentifier` の配列）に返します。1 件は、要素名（`element`）、書かれている属性すべて（`attrs`）、`name`・`shortName` の文、参照（`refs`）です。これまでどおり `attrs.otherIdentifiers` に要素名の並びも入ります。これらを `notReadElements` に数えなくなりました。
 - **品目の備考の脚注を読みます。** `footnoteRemarks` の文は `remarks` と同じく節点の `text` に入り、`attrs.remarksElement` が `"footnoteRemarks"` になります。`footnoteRef` は `refs` に `kind: "internalRef"`・`note: "footnoteRef"` で入ります。グループの直下の `footnote` は、その種類の品目の後ろに `kind: "para"`・`element: "footnote"` の節点として返します（`attrs.footnoteMark`）。
 - **作業の場所・所要時間・間隔（`productionMaintData`）を読みます。** `requirements` の子の、`kind: "para"`・`element: "productionMaintData"` の節点です。`attrs` に `taskDuration` の属性（`taskDuration.unitOfMeasure`・`taskDuration.procedureDuration` など）、子に `thresholdInterval`（`text` が値）と `workAreaLocationGroup` が入ります。`workAreaLocationGroup` の子は `zoneRef`・`accessPointRef`（`title` が `name`、`attrs` が属性）と `workLocation`（`text` が文、子が `workArea`・`productItem` など）です。これまでは `kind: "unknown"`・`attrs.notRead` の節点 1 つでした。
-- **プロセス DM の変数の宣言・代入・検査を読みます。** `variableDeclarations` は `kind: "list"` の節点で、子の `listItem`（`element: "variable"`）の `attrs` に属性と、初期値があれば `initialValue` が入ります。`variablePreSet`・`variablePostSet`・`assertion` は `kind: "para"` の節点で、`attrs.variableName` と `attrs.expression` を持ちます。メニューの選択肢（`menuChoice`）の `assertion` は、その `listItem` の子です。`validate` は `attrs.errorMessage` と `attrs.expression` を持ちます。式は評価せず、書かれた値と演算の名前を並べた文にします（例: `(age greaterThanOrEqual 4) and (age lessThanOrEqual 100)`、`names add name`、`"amateur"`）。この書き方で表せない式（`assert` など）は、`notReadElements` に `expression` と数えます。代入先が `globalPropertyRef` のときは `globalPropertyRef` と数えます。
+- **プロセス DM の変数の宣言・代入・検査を読みます。** `variableDeclarations` は `kind: "list"` の節点で、子の `listItem`（`element: "variable"`）の `attrs` に属性と、初期値があれば `initialValue` が入ります。`variablePreSet`・`variablePostSet`・`assertion` は `kind: "para"` の節点で、`attrs.variableName` と `attrs.expression` を持ちます。メニューの選択肢（`menuChoice`）の `assertion` は、その `listItem` の子です。`validate` は `attrs.errorMessage` と `attrs.expression` を持ちます。式は評価せず、書かれた値と演算の名前を並べた文にします（例: `(age greaterThanOrEqual 4) and (age lessThanOrEqual 100)`、`names add name`、`"amateur"`）。この書き方で表せない式は、`notReadElements` に `expression` と数えます。代入先が `globalPropertyRef` のときは `globalPropertyRef` と数えます。
 - **図の改訂の理由（`graphic/reasonForAmendment`）を読みます。** 図への参照（`ContentRef`）の `reasonForAmendment` に文が入ります。
+- **`dmIf` の条件の式を `attrs.expression` に読みます。** 式は評価せず、変数の宣言・代入・検査と同じ書き方の文にします（例: `not(level equal "experienced")`）。`question` は、これまでどおり人が書いた文（`expression/@humanReadableForm`）だけです。`humanReadableForm` がある式や、変数 1 つだけの式（`attrs.variableName`）でも、`attrs.expression` が入ります。これまでは、`humanReadableForm` が無く変数 1 つでもない式は、`kind: "unknown"` の子として返していました。文にできない式は、これまでどおり `unknown` の子です。
+- **繰り返し（`dmLoop`）を節点として返します。** `kind: "sequence"`・`element: "dmLoop"` の節点で、条件の式が `attrs.expression`（`humanReadableForm` があれば `attrs.humanReadableForm`）、子が前の代入（`variablePreSet`）・繰り返す `dmSeq`・後ろの代入（`assertion`）です。これまでは節点を作らずに子だけを返していたので、条件の式が外側の節点の `unknown` の子になっていました。プロセス DM の読み取りの結果は、`dmLoop` のところで階層が 1 段増えます。
+- **式の中の適用性の条件（`assert`）を文にします。** `assert(識別子 種類 "値")` の形です（例: `assert(tourFinished condition "False")`）。属性が無く文だけの `assert` は `assert("文")` です。これまでは、`assert` を含む式を `notReadElements` に `expression` と数えていました。式の中の `globalPropertyRef` は、まだ文にできません。
 - **`userEntry` の入力先の変数（`variableRef`）を、`unknown` に数えなくなりました。** 変数名はこれまでどおり `dialog` の節点の `attrs.variableName` に入ります。これまでは同じ `variableRef` が、子の `kind: "unknown"` の節点と `unknownElements` にも現れていました。
 
 ### 修正
@@ -26,8 +29,9 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
 
 ### テスト
 
-- 読み取りのテストを 1 件足し、3 件を書き直しました。条件付きのルールの候補のテストを 6 件足しました（296 件。配布物を使う 39 件はスキップ）。
+- 読み取りのテストを 2 件足し、3 件を書き直しました。条件付きのルールの候補のテストを 6 件足しました（297 件。配布物を使う 39 件はスキップ）。
 - 配布物を使うテスト（`src/content/coverage.spec.test.ts`）の上限を、読み取りの結果に無いテキスト節点 13 個 → 0 個、1 つも落とさずに読めた DM 55 件 → 59 件に変えました。`preliminaryRqmts` の往復の数（失われる要素・属性 602 個、26 件）は変わりません。
+- 配布物を使うテスト（`src/spec.test.ts`）の実測値を更新しました（プロセス DM の `sequence` 4 → 5、知らない要素 6 種類 → 0 種類）。
 
 ## 0.11.0 (2026-11-16)
 

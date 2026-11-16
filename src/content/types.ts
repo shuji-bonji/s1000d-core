@@ -36,9 +36,9 @@ export type ContentNodeKind =
   | 'supply'
   /** requirements の子: 予備品（spareDescr） */
   | 'spare'
-  /** process の dmSeq */
+  /** process の dmSeq と dmLoop（繰り返し。条件の式は `attrs.expression`） */
   | 'sequence'
-  /** process の dmIf（条件分岐） */
+  /** process の dmIf（条件分岐）。条件の式は `attrs.expression`、人が書いた文（`humanReadableForm`）は `question` */
   | 'if'
   /** process の dialog（利用者への問い） */
   | 'dialog'
@@ -143,7 +143,7 @@ export interface ContentNode {
   securityClassification?: string;
   /** この節点自身が持つ参照 */
   refs?: ContentRef[];
-  /** その他の属性（process の variableName、changeMark など） */
+  /** その他の属性（process の variableName、式を文にした expression、changeMark など） */
   attrs?: Record<string, string>;
   children: ContentNode[];
   location: NodeLocation;

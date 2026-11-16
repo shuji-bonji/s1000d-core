@@ -247,7 +247,9 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     expect(nodes.proced).toMatchObject({ requirements: 78, step: 330, figure: 26 });
     expect(nodes.pm).toEqual({ section: 4, entry: 110 });
     expect(nodes.fault.step).toBe(6);
-    expect(nodes.process).toMatchObject({ sequence: 4, if: 1 });
+    // process の sequence は、dmLoop を節点にしたので 4 → 5。知らない要素は無くなった
+    expect(nodes.process).toMatchObject({ sequence: 5, if: 1 });
+    expect(unknown.process).toBeUndefined();
     // descript と pm には知らない要素が無い。proced の未知は回路遮断器（circuitBreaker…）の群だけ
     expect(unknown.descript).toBeUndefined();
     expect(unknown.pm).toBeUndefined();

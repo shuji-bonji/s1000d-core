@@ -294,6 +294,51 @@ describe('readContent', () => {
     expect(c.unknownElements.expression).toBe(1);
   });
 
+  it('process: dmIf と dmLoop の式を attrs.expression に読む（question は人が書いた文だけ）', () => {
+    const c = readContentFromXml(
+      wrap(
+        'process',
+        `<process><dmSeq>
+  <dmIf><expression><booleanFunction booleanAction="not"/><expression><expression><variableRef variableName="level"/></expression><numberOperator numberOperation="equal"/><expression><stringValue>experienced</stringValue></expression></expression></expression>
+    <dmThenSeq>
+      <dmLoop id="loop1">
+        <variablePreSet><assertion><variableRef variableName="mistakes"/><expression><integerValue>0</integerValue></expression></assertion></variablePreSet>
+        <expression><assert applicPropertyIdent="tourFinished" applicPropertyType="condition" applicPropertyValues="False"/></expression>
+        <dmSeq><dmNode><title>案内</title></dmNode></dmSeq>
+        <assertion><variableRef variableName="mistakes"/><expression><integerValue>1</integerValue></expression></assertion>
+      </dmLoop>
+    </dmThenSeq>
+  </dmIf>
+  <dmIf><expression humanReadableForm="初心者のとき"><expression><variableRef variableName="level"/></expression><stringOperator stringOperation="equal"/><expression><stringValue>amateur</stringValue></expression></expression><dmThenSeq><dmNode><title>初心者</title></dmNode></dmThenSeq></dmIf>
+  <dmLoop><expression><variableRef variableName="a"/><variableRef variableName="b"/></expression><dmSeq><dmNode><title>読めない条件</title></dmNode></dmSeq></dmLoop>
+</dmSeq></process>`,
+      ),
+    );
+    const [first, second, badLoop] = c.blocks[0]!.children;
+    // humanReadableForm が無い式: question は無く、式の文が attrs.expression に入る
+    expect(first).toMatchObject({ kind: 'if', element: 'dmIf' });
+    expect(first!.question).toBeUndefined();
+    expect(first!.attrs).toEqual({ expression: 'not(level equal "experienced")' });
+    // dmLoop は sequence の節点。条件の式は attrs.expression で、子は前の代入・繰り返す dmSeq・後ろの代入
+    const loop = first!.children[0]!;
+    expect(loop).toMatchObject({ kind: 'sequence', element: 'dmLoop', id: 'loop1' });
+    expect(loop.attrs).toEqual({ expression: 'assert(tourFinished condition "False")' });
+    expect(loop.children.map((n) => [n.kind, n.element, n.attrs])).toEqual([
+      ['para', 'variablePreSet', { variableName: 'mistakes', expression: '0' }],
+      ['sequence', 'dmSeq', undefined],
+      ['para', 'assertion', { variableName: 'mistakes', expression: '1' }],
+    ]);
+    // humanReadableForm があれば question に入り、式の文も attrs.expression に入る
+    expect(second!.question).toBe('初心者のとき');
+    expect(second!.attrs).toEqual({ expression: 'level equal "amateur"' });
+    // 文にできない式は、これまでどおり unknown の子として残す
+    expect(badLoop).toMatchObject({ kind: 'sequence', element: 'dmLoop' });
+    expect(badLoop!.attrs).toBeUndefined();
+    expect(badLoop!.children.map((n) => n.element)).toEqual(['expression', 'dmSeq']);
+    expect(c.unknownElements).toEqual({ expression: 1, variableRef: 2 });
+    expect(c.notReadElements).toEqual({});
+  });
+
   it('fault: 問いと答えごとの次の手順', () => {
     const c = readContentFromXml(FAULT);
     const steps = c.blocks.filter((n) => n.kind === 'step');

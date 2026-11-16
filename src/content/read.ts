@@ -473,6 +473,9 @@ class Reader {
     }
     if (LOGIC.has(name)) return this.logicNodes(el);
     if (SKIP.has(name)) return [];
+    // userEntry の入力先の変数は、親の dialog の節点が attrs.variableName に読む（unknown に数えない）
+    if (name === 'variableRef' && (el.parentNode as Element | null)?.nodeName === 'userEntry')
+      return [];
     if (TRANSPARENT.has(name)) return this.readChildren(el, stepCounter);
     const kind: ContentNodeKind = BLOCKS[name] ?? 'unknown';
     if (kind === 'unknown') this.unknown[name] = (this.unknown[name] ?? 0) + 1;

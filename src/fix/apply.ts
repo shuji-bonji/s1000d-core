@@ -112,7 +112,48 @@ function sameLocation(a: NodeLocation | undefined, b: NodeLocation | undefined):
 type MatchResult =
   | { state: 'match'; fix: Fix; candidate: FixCandidate }
   | { state: 'value-not-allowed' }
-  | { state: 'none' };
+  | { state: 'none'; note: string };
+
+const show = (v: string | undefined): string => (v === undefined ? '(none)' : JSON.stringify(v));
+
+/** 値が合うか（single は同じ文字列、range / pattern はその範囲・正規表現に合う値） */
+function valueMatches(c: FixCandidate, selected: FixCandidate): boolean {
+  if (c.valueForm === 'range' || c.valueForm === 'pattern') {
+    const v = selected.value;
+    if (v === undefined || c.value === undefined) return false;
+    return c.valueForm === 'range' ? matchesRange(v, c.value) : matchesPattern(v, c.value);
+  }
+  return c.value === selected.value;
+}
+
+/**
+ * 一致する候補が無かった理由を、選択のどの項目が食い違ったかが分かる文にする。
+ * 場所が同じ提案の候補のうち、`action` と値は合うのに `target`・`position` だけが違うものがあれば、その値を書く
+ * （候補の `target`・`position` を選択に写していない、という誤りが多い）
+ */
+function describeMiss(offered: Fix[], fix: Fix, selected: FixCandidate): string {
+  const here = offered.filter((o) => sameLocation(o.location, fix.location));
+  const at = fix.location?.path ? `at ${fix.location.path}` : 'without a location';
+  if (here.length === 0)
+    return `No fix is offered ${at}. Copy "location" from the fix returned by suggestFixes without changing it.`;
+  const candidates = here.flatMap((o) => o.candidates);
+  const near = candidates.filter((c) => c.action === selected.action && valueMatches(c, selected));
+  if (near.length > 0) {
+    const fields = near
+      .map((c) => `target ${show(c.target)}${c.position ? `, position ${show(c.position)}` : ''}`)
+      .filter((t, i, all) => all.indexOf(t) === i);
+    return (
+      `The selection has target ${show(selected.target)}` +
+      `${selected.position ? `, position ${show(selected.position)}` : ''}, ` +
+      `but the candidate offered ${at} with the same action and value has ${fields.join(' / ')}. ` +
+      'Copy "target" and "position" from the offered candidate as they are.'
+    );
+  }
+  const actions = [...new Set(candidates.map((c) => c.action))];
+  if (!actions.includes(selected.action))
+    return `No candidate with action "${selected.action}" is offered ${at} (offered actions: ${actions.join(', ') || 'none'}).`;
+  return `No candidate with action "${selected.action}" and value ${show(selected.value)} is offered ${at}.`;
+}
 
 /**
  * 選択された候補が、提案された候補のどれかと一致するか。
@@ -146,7 +187,9 @@ function matchOffered(offered: Fix[], fix: Fix, selected: FixCandidate): MatchRe
       return { state: 'match', fix: o, candidate: c };
     }
   }
-  return valueMiss ? { state: 'value-not-allowed' } : { state: 'none' };
+  return valueMiss
+    ? { state: 'value-not-allowed' }
+    : { state: 'none', note: describeMiss(offered, fix, selected) };
 }
 
 // ---------------------------------------------------------------------------
@@ -792,14 +835,14 @@ function applyChecked(
   if (offered) {
     const m = matchOffered(offered, fix, candidate);
     if (m.state === 'value-not-allowed') return no('value-not-allowed');
-    if (m.state === 'none') return no('candidate-not-offered');
+    if (m.state === 'none') return no('candidate-not-offered', m.note);
     useFix = m.fix;
     useCandidate = m.candidate;
   } else {
     // 照合の元が無い: 渡された fix 自身の候補との一致だけを確かめる
     const m = matchOffered([fix], fix, candidate);
     if (m.state === 'value-not-allowed') return no('value-not-allowed');
-    if (m.state === 'none') return no('candidate-not-offered');
+    if (m.state === 'none') return no('candidate-not-offered', m.note);
     useCandidate = m.candidate;
     notes.push(
       'No verify result or offered fixes were given; only the candidates of the given fix were checked.',

@@ -164,6 +164,19 @@ describe('applyFix: BREX の違反', () => {
     // fix が偽の候補を持っていても、照合は計算し直した候補で行う
     const forged: Fix = { ...fix, candidates: [{ ...candidate, value: 'K9999' }] };
     expect(applyFix(dmXml, forged, forged.candidates[0]!, { offered: fixes }).applied).toBe(false);
+    // 理由だけでは何が食い違ったか分からないので、notes に書く。候補の target を写し忘れたときは、その target を知らせる
+    const withoutTarget: FixCandidate = { ...candidate };
+    delete withoutTarget.target;
+    const noTarget = reject(fix, withoutTarget);
+    expect(noTarget).toMatchObject({ applied: false, reason: 'candidate-not-offered', xml: dmXml });
+    expect(noTarget.notes.join(' ')).toContain(`has target ${JSON.stringify(candidate.target)}`);
+    expect(noTarget.notes.join(' ')).toContain('The selection has target (none)');
+    expect(reject({ ...fix, location: undefined }, candidate).notes.join(' ')).toContain(
+      'No fix is offered without a location',
+    );
+    expect(reject(fix, { ...candidate, value: 'K9999' }).notes.join(' ')).toContain(
+      'No candidate with action "replace" and value "K9999"',
+    );
   });
 
   it('provide は文書を変えない', () => {

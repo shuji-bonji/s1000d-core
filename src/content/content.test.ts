@@ -256,6 +256,9 @@ describe('readContent', () => {
       text: '人数を入れてください',
       attrs: { variableName: 'persons' },
     });
+    // 入力先の変数は attrs.variableName に読むので、子の unknown にも unknownElements にも数えない
+    expect(dialog!.children).toEqual([]);
+    expect(c.unknownElements.variableRef).toBeUndefined();
     expect(seq.children[1]).toMatchObject({
       kind: 'if',
       applicRefId: 'many',

@@ -12,6 +12,7 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
 - **作業の場所・所要時間・間隔（`productionMaintData`）を読みます。** `requirements` の子の、`kind: "para"`・`element: "productionMaintData"` の節点です。`attrs` に `taskDuration` の属性（`taskDuration.unitOfMeasure`・`taskDuration.procedureDuration` など）、子に `thresholdInterval`（`text` が値）と `workAreaLocationGroup` が入ります。`workAreaLocationGroup` の子は `zoneRef`・`accessPointRef`（`title` が `name`、`attrs` が属性）と `workLocation`（`text` が文、子が `workArea`・`productItem` など）です。これまでは `kind: "unknown"`・`attrs.notRead` の節点 1 つでした。
 - **プロセス DM の変数の宣言・代入・検査を読みます。** `variableDeclarations` は `kind: "list"` の節点で、子の `listItem`（`element: "variable"`）の `attrs` に属性と、初期値があれば `initialValue` が入ります。`variablePreSet`・`variablePostSet`・`assertion` は `kind: "para"` の節点で、`attrs.variableName` と `attrs.expression` を持ちます。メニューの選択肢（`menuChoice`）の `assertion` は、その `listItem` の子です。`validate` は `attrs.errorMessage` と `attrs.expression` を持ちます。式は評価せず、書かれた値と演算の名前を並べた文にします（例: `(age greaterThanOrEqual 4) and (age lessThanOrEqual 100)`、`names add name`、`"amateur"`）。この書き方で表せない式（`assert` など）は、`notReadElements` に `expression` と数えます。代入先が `globalPropertyRef` のときは `globalPropertyRef` と数えます。
 - **図の改訂の理由（`graphic/reasonForAmendment`）を読みます。** 図への参照（`ContentRef`）の `reasonForAmendment` に文が入ります。
+- **`userEntry` の入力先の変数（`variableRef`）を、`unknown` に数えなくなりました。** 変数名はこれまでどおり `dialog` の節点の `attrs.variableName` に入ります。これまでは同じ `variableRef` が、子の `kind: "unknown"` の節点と `unknownElements` にも現れていました。
 
 ### 修正
 
@@ -21,6 +22,7 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
   - 対象そのものの識別（`dmAddress` などの下のコード・`issueNumber`・`inWork`）を変える候補は出しません。
   - 条件付きのルールでは、確からしさは `several` か `none` です。候補を決められなければ候補なし（`none`）で、取り除く候補は出しません。述語の無い objectPath は、これまでどおり「取り除く」を `exact` で返します。
   - この候補を作るために、`suggestFixes` は `options.xml` と XSD の定義を BREX の候補にも使います。`suggestBrexFixes` の選択項目に `document`・`engine`・`xsd` を足しました。
+- **`applyFix`・`applyFixes` が `candidate-not-offered` で断るときに、食い違った項目を `notes` に書きます。** 場所が同じ提案の候補のうち、`action` と値は合うのに `target`・`position` だけが違うものがあれば、その候補の `target` を知らせます（例: `The selection has target (none), but the candidate offered at … with the same action and value has target "identAndStatusSection/dmStatus/@issueType".`）。その場所に提案が無いとき、その `action` の候補が無いとき、値が合う候補が無いときも、それぞれ文にします。照合の厳しさは変わりません（`target` を省いた選択は、これまでどおり適用しません）。
 
 ### テスト
 

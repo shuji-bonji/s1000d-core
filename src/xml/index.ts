@@ -10,3 +10,9 @@ export {
   type XmlParseIssue,
 } from './engine.js';
 export { XmldomFontoxpathEngine, defaultXmlEngine } from './xmldom-fontoxpath.js';
+export {
+  rangeOfElement,
+  rangesMatchDocument,
+  scanElementRanges,
+  type ElementRange,
+} from './ranges.js';

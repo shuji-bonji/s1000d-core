@@ -461,6 +461,13 @@ export class Writer {
     }
   }
 
+  /** リストの項目 1 つ（listItem）。既にあるリストに項目を足すとき（`editContent` の insert）にも使う */
+  listItem(node: DraftNode, path: string): Element {
+    const item = this.common(this.el('listItem'), node);
+    this.itemBody(item, node, 'listItem', path);
+    return item;
+  }
+
   /** list（randomList / sequentialList / definitionList） */
   listEl(node: DraftNode, path: string): Element {
     if (node.kind !== 'list') {
@@ -490,9 +497,7 @@ export class Writer {
         item.appendChild(def);
         e.appendChild(item);
       } else {
-        const item = this.common(this.el('listItem'), p);
-        this.itemBody(item, p, 'listItem', pp);
-        e.appendChild(item);
+        e.appendChild(this.listItem(p, pp));
       }
     });
     return e;

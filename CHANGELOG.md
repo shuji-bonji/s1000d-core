@@ -1,5 +1,24 @@
 # Changelog
 
+## 未リリース
+
+### 追加
+
+- **既にあるデータモジュールの構造を変える編集（`editContent`）を足しました。** 節点を足す（`insert`）・取り除く（`remove`）・移す（`move`）の 3 つの操作です。設計は s1000d-stack の docs/design/core-structural-edit.md にあります。
+  - 場所は、編集の前の文書の `location.path`（`readContent` が返すもの）で指します。複数の編集を渡すときも、すべて編集の前の場所で書きます。
+  - 1 つでも断る理由があれば、1 つも適用しません。断った編集ごとに、理由（`refusals[].reason`）と場所を返します。
+  - **元の文字列の、編集した範囲だけを書き換えます。** 触っていない部分は 1 文字も変わりません。移した要素の中身も変わりません。`applyFix`・`applySegments` は文書要素の全体を直列化し直すので、開始タグの属性の改行などが変わります（Bike Samples の DMC・PMC 110 件では、何も変えなくても 91,215 行のうち 26,258 行が変わります）。`editContent` はこの方法を使いません。
+  - 文字列を書き換えた結果を読み直し、DOM で同じ操作をした結果と比べます。合わなければ `internal-mismatch` で断ります。
+  - 対象の要素は `proceduralStep`・`para`・`warning`・`caution`・`note`・`listItem` です（`EDITABLE_ELEMENTS`）。足す節点は `DraftNode`（`step`・`para`・`admonition`・`listItem`）で渡し、手順 DM と説明 DM に足せます。
+  - 取り除く節点（子孫を含む）の `id` を、残る部分の属性（`internalRefId`・`applicRefId`・`warningRefs` など）が指しているときは `id-referenced` で断り、指している要素の場所を返します。足す節点の `id` が文書に既にあるときは `id-duplicate` です。
+  - **版（`issueInfo`）も変更の印（`changeType`・`changeMark`・`reasonForUpdate`）も変えません。** 発行済みの版（`issueInfo/@inWork` が `00`）は `released-issue` で断ります。`allowReleasedIssue: true` を渡すと適用し、`notes` にそのことを書きます。
+  - 親がその位置にその要素を取れるか（XSD の内容モデルの順序）は確かめません。`options.xsd`（`XsdIndex`）を渡すと、親がその名前の子を取れるかだけを確かめます（`not-allowed-here`）。順序の誤りは、適用の後の XSD の検証で見つかります。
+- **要素が元の文字列の中で占める範囲を求める関数（`scanElementRanges`・`rangeOfElement`・`rangesMatchDocument`）を足しました。** コメント・CDATA・処理命令と、属性の値の中の `>` を読み飛ばします。DOM の要素との対応は、文書要素から数えた子要素の番号で取ります。
+
+### テスト
+
+- `editContent` と要素の範囲のテストを 17 件足しました。配布物を使うテストを 3 件足しました（Bike Samples の 110 件すべてで範囲が DOM と対応すること、対象の要素を取り除く編集が文字列と DOM で同じ結果になること、手順が 2 つ以上ある手順 DM 39 件で、最後の手順を 1 つ前の要素の前に移して戻すと行の集まりが元と同じになること。39 件のうち 37 件は元の文字列と同じになり、残りの 2 件は 2 つの要素の間にコメントがあって、コメントの位置だけが入れ替わります）。
+
 ## 0.12.0 (2026-11-17)
 
 Bike Samples の本文で、あることを知らせるだけだった残りの要素を読むようにしました。本文を構造化して読む 59 件のテキスト節点 1,587 個のうち、読み取りの結果に無いものは 13 個から 0 個になりました（s1000d-stack の DECISIONS D-31「読む側は落とさない」、docs/notes/tm-eval-progress.md）。あわせて、条件付きで禁止する BREX ルールの修正候補を直しました。次の版は 0.12.0 です（読み取りの結果と、修正候補が変わります）。

@@ -266,9 +266,10 @@ function contentKindOf(doc: Document): DraftKind | undefined {
   const root = doc.documentElement;
   if (!root || root.nodeName !== 'dmodule') return undefined;
   const content = elementChildren(root).find((c) => c.nodeName === 'content');
-  const first = content ? elementChildren(content)[0] : undefined;
-  if (first?.nodeName === 'procedure') return 'proced';
-  if (first?.nodeName === 'description') return 'descript';
+  // content の先頭には refs・referencedApplicGroup・warningsAndCautions などが来ることがある
+  const names = content ? elementChildren(content).map((c) => c.nodeName) : [];
+  if (names.includes('procedure')) return 'proced';
+  if (names.includes('description')) return 'descript';
   return undefined;
 }
 

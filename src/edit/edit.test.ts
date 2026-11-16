@@ -33,6 +33,13 @@ const dm = (inWork = '01') => `<?xml version="1.0" encoding="UTF-8"?>
     </dmAddress>
   </identAndStatusSection>
   <content>
+    <refs>
+      <externalPubRef>
+        <externalPubRefIdent>
+          <externalPubCode>KB-0001</externalPubCode>
+        </externalPubRefIdent>
+      </externalPubRef>
+    </refs>
     <procedure>
       <mainProcedure>
         <proceduralStep id="stp-0001">

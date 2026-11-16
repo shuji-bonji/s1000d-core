@@ -40,6 +40,8 @@ const BASELINE = {
   procedWithSteps: 39,
   /** そのうち、移して戻すと元の文字列と同じになる数（残りは、2 つの要素の間にコメントがある） */
   exactRoundTrips: 37,
+  /** トップレベルの手順が 1 つ以上ある手順 DM の数 */
+  procedWithFirstStep: 39,
 };
 
 describe.skipIf(!enabled)('editContent: Bike Samples', () => {
@@ -137,4 +139,35 @@ describe.skipIf(!enabled)('editContent: Bike Samples', () => {
     expect(count).toBe(BASELINE.procedWithSteps);
     expect(exact).toBe(BASELINE.exactRoundTrips);
   }, 600_000);
+
+  it('手順 DM のすべてで、最初の手順の後ろに手順を足せる（足した行のほかは変わらない）', () => {
+    const first = '/dmodule/content/procedure/mainProcedure/proceduralStep[1]';
+    let count = 0;
+    for (const { name, xml } of files) {
+      const doc = defaultXmlEngine.parse(xml).document;
+      if (defaultXmlEngine.selectNodes(first, doc).length === 0) continue;
+      count++;
+      const r = editContent(
+        xml,
+        [
+          {
+            op: 'insert',
+            to: first,
+            position: 'after',
+            node: { kind: 'step', text: 'Added step.' },
+          },
+        ],
+        { allowReleasedIssue: true },
+      );
+      expect(r.refusals, name).toEqual([]);
+      const added = r.xml.split('\n').filter((l) => l.includes('Added step.'));
+      expect(added, name).toHaveLength(1);
+      // 足した手順の 3 行（開始タグ、段落、終了タグ）を除くと、元の文字列に戻る
+      const lines = r.xml.split('\n');
+      const at = lines.findIndex((l) => l.includes('Added step.'));
+      lines.splice(at - 1, 3);
+      expect(lines.join('\n') === xml, name).toBe(true);
+    }
+    expect(count).toBe(BASELINE.procedWithFirstStep);
+  });
 });

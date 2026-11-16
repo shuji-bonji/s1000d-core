@@ -139,12 +139,14 @@ export function suggestBrexFixes(report: BrexCheckReport, options: BrexFixOption
           };
           // 述語のある objectPath: 禁じているのは要素ではなく条件。取り除く候補を exact にしない
           if (v.location?.path && isConditionalPath(v.objectPath)) {
+            const hints: string[] = [];
             const derived =
               options.document && options.engine
                 ? conditionCandidates(
                     { doc: options.document, engine: options.engine, xsd: options.xsd },
                     v.objectPath!,
                     v.location.path,
+                    hints,
                   )
                 : [];
             // 禁じているのは条件なので、要素を取り除く候補は出さない（identAndStatusSection や文書要素を
@@ -155,7 +157,10 @@ export function suggestBrexFixes(report: BrexCheckReport, options: BrexFixOption
               ...base,
               candidates: cands,
               confidence: cands.length === 0 ? 'none' : 'several',
-              note: derived.length > 0 ? CONDITIONAL_NOTE : CONDITIONAL_NO_CANDIDATE_NOTE,
+              note: [
+                derived.length > 0 ? CONDITIONAL_NOTE : CONDITIONAL_NO_CANDIDATE_NOTE,
+                ...hints,
+              ].join(' '),
             });
             break;
           }

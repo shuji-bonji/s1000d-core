@@ -108,9 +108,77 @@ describe('条件付きで禁止する BREX ルールの候補', () => {
     expect(a.candidates).toEqual([]);
     expect(a.confidence).toBe('none');
     expect(a.note).toContain('no single change');
+    // 属性が無い場所と、値の出どころが無いことを注記する
+    expect(a.note).toContain('@applicRefId is absent on <levelledPara>');
+    expect(a.note).toContain('No source for its value was found');
     const b = fixesFor(brexWith(NEEDS_REASON), 'KB-00005', undefined, false).fix;
     expect(b.candidates).toEqual([]);
     expect(b.confidence).toBe('none');
+  });
+
+  it('属性が無いことが条件のルール: 1 か所に足せば違反が消え、値の出どころがあるときだけ候補にする', () => {
+    // 文書の中に applic の id があるとき、applicRefId の値の候補にする
+    const withApplic = dmXml
+      .replace(
+        '<content>',
+        '<content><referencedApplicGroup><applic id="app1"/><applic id="app2"/></referencedApplicGroup>',
+      )
+      .replace(
+        '</levelledPara>',
+        '</levelledPara><levelledPara><title>追加の節</title><para>本文</para></levelledPara>',
+      );
+    expect(withApplic).toContain('追加の節');
+    expect(withApplic).toContain('<applic id="app1"/>');
+    const suggest = (brex: ReturnType<typeof brexWith>, xml: string) => {
+      const fixes = suggestBrexFixes(checkAgainstBrexLayers(xml, [brex]), {
+        layers: [brex],
+        document: defaultXmlEngine.parse(xml).document,
+        engine: defaultXmlEngine,
+      });
+      return { fixes, mine: fixes.filter((f) => f.source.endsWith('KB-00005')) };
+    };
+
+    // 違反の要素そのものに属性が無い: その要素に足す候補（値は applic の id）
+    const own = brexWith(NO_APPLIC_ID);
+    const a = suggest(own, withApplic);
+    expect(a.mine.length).toBeGreaterThan(0);
+    const fix = a.mine[0]!;
+    expect(fix.candidates.map((c) => [c.action, c.target, c.value])).toEqual([
+      ['add', '@applicRefId', 'app1'],
+      ['add', '@applicRefId', 'app2'],
+    ]);
+    // どの適用性を付けるかは内容の判断なので、自動で適用される exact にはしない
+    expect(fix.confidence).toBe('several');
+    const before = checkAgainstBrexLayers(withApplic, [own]).layers[0].violations.length;
+    const done = applyFix(withApplic, fix, fix.candidates[1]!, { offered: a.fixes });
+    expect(done).toMatchObject({ applied: true, changed: { after: 'app2' } });
+    expect(done.changed?.xpath).toBe(`${fix.location!.path}/@applicRefId`);
+    expect(checkAgainstBrexLayers(done.xml, [own]).layers[0].violations.length).toBe(before - 1);
+
+    // 属性が無い場所が複数あって、1 か所に足しても違反が消えない: 候補なしにして、場所の数と使える値を注記する
+    const many = brexWith('//content[descendant::levelledPara[not(attribute::applicRefId)]]');
+    const places = (withApplic.match(/<levelledPara\b/g) ?? []).length;
+    expect(places).toBeGreaterThan(1);
+    const b = suggest(many, withApplic).mine[0]!;
+    expect(b.candidates).toEqual([]);
+    expect(b.confidence).toBe('none');
+    expect(b.note).toContain(`@applicRefId is absent on ${places} <levelledPara> element(s)`);
+    expect(b.note).toContain('every place must get a value');
+    expect(b.note).toContain('ids of the applic elements in the document): app1, app2');
+
+    // 属性が無い場所が子孫の 1 か所だけ: その場所への道を target にした候補
+    const onlyFirst = withApplic.replace(
+      /<levelledPara\b(?![^>]*applicRefId)/g,
+      (m, offset: number) =>
+        offset === withApplic.indexOf('<levelledPara') ? m : `${m} applicRefId="app1"`,
+    );
+    const c = suggest(many, onlyFirst);
+    const cf = c.mine[0]!;
+    expect(cf.candidates.map((x) => x.value)).toEqual(['app1', 'app2']);
+    expect(cf.candidates[0]!.target).toMatch(/levelledPara(\[1\])?\/@applicRefId$/);
+    const applied = applyFix(onlyFirst, cf, cf.candidates[0]!, { offered: c.fixes });
+    expect(applied.applied).toBe(true);
+    expect(violates(applied.xml, many, 'KB-00005')).toBe(false);
   });
 
   it('述語の無い objectPath は、これまでどおり「取り除く」を exact で返す', () => {

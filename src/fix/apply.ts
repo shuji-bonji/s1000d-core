@@ -653,6 +653,15 @@ function applyAdd(ctx: Ctx, c: FixCandidate, path: string | undefined): Outcome 
       insertChild(at.el, child, chooseRef(at.el, value, ctx.xsd, notes));
       return { ok: true, changed: { xpath: `${path}/${value}`, after: `<${value}>` }, notes };
     }
+    // 場所の要素の子孫（または別の場所）の要素に属性を足す（条件付きの BREX ルールの候補: target は `道/@属性名`）
+    const attrStep = target === undefined ? null : /^(.+)\/@([^/@]+)$/.exec(target);
+    if (attrStep) {
+      const full = attrStep[1]!.startsWith('/') ? attrStep[1]! : `${path}/${attrStep[1]!}`;
+      const dest = locate(ctx, full);
+      if (dest.type === 'error') return dest.outcome;
+      if (dest.type !== 'element') return fail('target-mismatch', `${full} is not an element`);
+      return addAttribute(dest.el, attrStep[2]!, value, full);
+    }
     // 場所の要素の子孫に子要素を足す（条件付きの BREX ルールの候補: target は親への相対の道、value は足す子の名前）
     if (target !== undefined && target.includes('/') && value !== undefined) {
       if (!NAME_RE.test(value)) return fail('value-malformed', `"${value}" is not an element name`);

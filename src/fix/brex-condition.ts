@@ -12,7 +12,11 @@
  * 候補にしないもの:
  * - 対象そのものの識別（`dmAddress` などの下の属性: コード、issueNumber、inWork、言語）。変えるとファイル名と、
  *   ほかの対象からの参照が合わなくなる
- * - 値を決められないもの（属性が無いこと `not(@a)` は、足す値が分からない）
+ *
+ * 属性が無いこと（`not(@a)`・`not(attribute::a)`）が条件のときは、その属性が無い要素に属性を足して評価し直す。
+ * 候補にするのは、1 か所に足すだけで違反が消え、足す値の出どころがあるときだけ（XSD が値を列挙している属性と、
+ * 文書の中の `applic` の `id` を値にできる `applicRefId`）。属性が無い場所が複数あって 1 か所では消えないとき、
+ * 値の出どころが無いときは候補にせず、場所の数と使える値を `notes` に書く（どの値を付けるかは内容の判断なので、人が決める）
  */
 import type { Document, Element, Node, XmlEngine } from '../xml/engine.js';
 import type { FixCandidate } from './types.js';
@@ -33,6 +37,7 @@ export function isConditionalPath(objectPath: string | undefined): boolean {
 }
 
 const ATTR_CMP_RE = /(?:@|attribute::)([A-Za-z_][\w.-]*)\s*(?:!=|=)\s*(?:"([^"]*)"|'([^']*)')/g;
+const ABSENT_ATTR_RE = /not\(\s*(?:@|attribute::)([A-Za-z_][\w.-]*)\s*\)/g;
 const ABSENT_EL_RE =
   /not\(\s*(?:(?:child|descendant|descendant-or-self)::)?([A-Za-z_][\w.-]*)\s*\)/g;
 
@@ -42,6 +47,31 @@ const MAX_ATTR_NODES = 4;
 const MAX_TRIAL_VALUES = 40;
 /** 要素を足す親の候補の数の上限 */
 const MAX_PARENTS = 4;
+/** 属性を足して試す場所の数の上限 */
+const MAX_ATTR_PLACES = 4;
+/** 注記に書く場所・値の数の上限 */
+const MAX_NOTED = 3;
+
+/**
+ * objectPath の `index` の位置を囲んでいる述語 `名前[ … ]` の、要素名。
+ * `dmRef[not(@a)]` の `not(` の位置なら `dmRef`。名前で始まらない段（`*[`・`)[`）なら undefined
+ */
+function predicateOwner(objectPath: string, index: number): string | undefined {
+  let depth = 0;
+  for (let i = index - 1; i >= 0; i--) {
+    const ch = objectPath[i];
+    if (ch === ']') depth++;
+    else if (ch === '[') {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+      const m = /([A-Za-z_][\w.-]*)\s*$/.exec(objectPath.slice(0, i));
+      return m ? m[1] : undefined;
+    }
+  }
+  return undefined;
+}
 
 const localName = (el: Element): string => el.localName ?? el.nodeName;
 
@@ -103,6 +133,8 @@ export function conditionCandidates(
   ctx: ConditionContext,
   objectPath: string,
   locationPath: string,
+  /** 候補にできなかった理由のうち、人が直すときの手がかりになるもの（属性が無い場所の数など）を足す先 */
+  notes: string[] = [],
 ): FixCandidate[] {
   const { doc, engine, xsd } = ctx;
   let node: Element;
@@ -163,6 +195,82 @@ export function conditionCandidates(
             target,
             value: v,
             description: `set ${owner.nodeName}/@${name} to "${v}" (now "${current}"); the condition of the rule no longer holds`,
+          });
+      }
+    }
+  }
+
+  // --- 無い属性を足す ---
+  const absentAttrs = new Map<string, Set<string>>();
+  for (const m of objectPath.matchAll(ABSENT_ATTR_RE)) {
+    const owner = predicateOwner(objectPath, m.index);
+    if (!owner) continue;
+    const set = absentAttrs.get(m[1]!) ?? new Set<string>();
+    set.add(owner);
+    absentAttrs.set(m[1]!, set);
+  }
+  for (const [name, owners] of absentAttrs) {
+    for (const ownerName of owners) {
+      // 属性が無い要素。違反の要素とその子孫を先に見て、無ければ文書の全体
+      const lacking = (els: Element[]) =>
+        els.filter((e) => localName(e) === ownerName && !e.hasAttribute(name));
+      let places = lacking([node, ...(Array.from(node.getElementsByTagName('*')) as Element[])]);
+      if (places.length === 0)
+        places = lacking(Array.from(doc.getElementsByTagName('*')) as Element[]);
+      places = places.filter((e) => !inAddress(e));
+      if (places.length === 0) continue;
+      // 足す値の出どころ: XSD の列挙値。applicRefId は、文書の中の applic の id
+      let values = xsd?.attributeConstraint(name, ownerName)?.enumerations ?? [];
+      let source = 'enumerated in the XSD';
+      if (values.length === 0 && name === 'applicRefId') {
+        source = 'ids of the applic elements in the document';
+        try {
+          values = engine
+            .selectNodes('//applic/@id', doc)
+            .map((a) => (a as unknown as { value?: string }).value ?? '')
+            .filter((v) => v !== '');
+        } catch {
+          values = [];
+        }
+      }
+      values = [...new Set(values)];
+      const cleared: Element[] = [];
+      for (const p of places.slice(0, MAX_ATTR_PLACES)) {
+        p.setAttribute(name, values[0] ?? 'x');
+        const ok = check();
+        p.removeAttribute(name);
+        if (ok) cleared.push(p);
+      }
+      const where = (els: Element[]) =>
+        els
+          .slice(0, MAX_NOTED)
+          .map((e) => pathFrom(node, e) || node.nodeName)
+          .join(', ') + (els.length > MAX_NOTED ? ', …' : '');
+      const available =
+        values.length > 0
+          ? ` Values available (${source}): ${values.slice(0, MAX_TRIAL_VALUES).join(', ')}.`
+          : ' No source for its value was found (the XSD does not enumerate it, and the document has no value to reuse).';
+      if (cleared.length === 0) {
+        notes.push(
+          `@${name} is absent on ${places.length} <${ownerName}> element(s) (${where(places)}). Adding it at one place does not end the condition${places.length > 1 ? '; every place must get a value' : ''}.${available}`,
+        );
+        continue;
+      }
+      if (values.length === 0) {
+        notes.push(
+          `@${name} is absent on <${ownerName}> (${where(cleared)}); adding it would end the condition.${available}`,
+        );
+        continue;
+      }
+      for (const p of cleared) {
+        const rel = pathFrom(node, p);
+        const target = rel === '' ? `@${name}` : `${rel}/@${name}`;
+        for (const v of values.slice(0, MAX_TRIAL_VALUES))
+          out.push({
+            action: 'add',
+            target,
+            value: v,
+            description: `add @${name}="${v}" to <${p.nodeName}>; the rule applies only while the attribute is absent (which value is right must be decided by a person)`,
           });
       }
     }

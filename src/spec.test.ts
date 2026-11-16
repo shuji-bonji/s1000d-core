@@ -242,8 +242,8 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
       for (const k of Object.keys(c.unknownElements)) (unknown[c.kind] ??= new Set()).add(k);
     }
     expect(files).toMatchObject({ descript: 14, proced: 39, process: 1, fault: 5, pm: 4 });
-    // 2026-10-25 の実測。読み取り部分を広げたら更新する
-    expect(nodes.descript).toMatchObject({ section: 29, para: 72, figure: 20, table: 1 });
+    // 2026-11-16 の実測（core 0.10.0 と 0.11.0 で同じ値）。読み取り部分を広げたら更新する
+    expect(nodes.descript).toMatchObject({ section: 29, para: 91, figure: 20, table: 1 });
     expect(nodes.proced).toMatchObject({ requirements: 78, step: 330, figure: 26 });
     expect(nodes.pm).toEqual({ section: 4, entry: 110 });
     expect(nodes.fault.step).toBe(6);

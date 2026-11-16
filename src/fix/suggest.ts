@@ -9,7 +9,7 @@ import type { BrexDocument } from '../brex/types.js';
 import type { CsdbIndex } from '../csdb-index.js';
 import { collectReferences, type CollectedReferences } from '../refs/collect.js';
 import type { VerifyResult } from '../verify/verify.js';
-import type { XmlEngine } from '../xml/engine.js';
+import type { Document, XmlEngine } from '../xml/engine.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
 import { suggestApplicabilityFixes, type ApplicFinding, type ApplicFixOptions } from './applic.js';
 import { suggestBrexFixes } from './brex.js';
@@ -54,7 +54,26 @@ export function suggestFixes(result: VerifyResult, options: SuggestFixesOptions 
     );
   }
 
-  if (result.brex) fixes.push(...suggestBrexFixes(result.brex, { layers: options.brexLayers }));
+  if (result.brex) {
+    // 条件付きで禁止するルールの候補は、文書を変えて評価し直して決める（brex-condition.ts）
+    const hasViolation = result.brex.layers.some((l) => l.violations.length > 0);
+    let document: Document | undefined;
+    if (hasViolation && options.xml !== undefined) {
+      try {
+        document = engine.parse(options.xml.replace(/^\uFEFF/, '')).document;
+      } catch {
+        document = undefined;
+      }
+    }
+    const xsd =
+      document && options.xsd !== false
+        ? (options.xsd ??
+          (result.schema.xsdPath ? loadXsdIndex(result.schema.xsdPath, engine) : undefined))
+        : undefined;
+    fixes.push(
+      ...suggestBrexFixes(result.brex, { layers: options.brexLayers, document, engine, xsd }),
+    );
+  }
 
   if (result.references) {
     let collected: CollectedReferences | undefined;

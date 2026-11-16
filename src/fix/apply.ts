@@ -361,6 +361,9 @@ const REMOVE_CHILDREN_RE = /child elements of this element/;
 /** 要素の直下の文字を取り除く候補（schema.ts: 'remove the text directly inside this element'） */
 const REMOVE_TEXT_RE = /text directly inside this element/;
 
+/** 場所の要素から見た別の場所の属性を指す target（`a/b/@x`、`/root/a/@x`）。`@x` だけのものは含めない */
+const RELATIVE_ATTR_RE = /\/@[A-Za-z_][\w.:-]*$/;
+
 type Located =
   | { type: 'attr'; owner: Element; name: string }
   | { type: 'element'; el: Element }
@@ -454,6 +457,18 @@ function applyReplace(ctx: Ctx, fix: Fix, c: FixCandidate, path: string | undefi
     issue.setAttribute('issueNumber', m[1]!);
     issue.setAttribute('inWork', m[2]!);
     return { ok: true, changed: { xpath: `${path}/${target}`, before, after: value }, notes };
+  }
+
+  // 場所の要素から見た別の場所の属性（条件付きの BREX ルールの候補: `dmStatus/@issueType`、`/dmodule/…/@x`）
+  if (target !== undefined && RELATIVE_ATTR_RE.test(target)) {
+    if (at.type !== 'element') return fail('target-mismatch', 'The location is an attribute.');
+    const full = target.startsWith('/') ? target : `${path}/${target}`;
+    const dest = locate(ctx, full);
+    if (dest.type === 'error') return dest.outcome;
+    if (dest.type !== 'attr') return fail('target-mismatch', `${full} is not an attribute`);
+    const before = dest.owner.getAttribute(dest.name) ?? undefined;
+    dest.owner.setAttribute(dest.name, value);
+    return { ok: true, changed: { xpath: full, before, after: value } };
   }
 
   const tgtAttr = attrTarget(target);
@@ -594,6 +609,21 @@ function applyAdd(ctx: Ctx, c: FixCandidate, path: string | undefined): Outcome 
       const child = ctx.doc.createElementNS(at.el.namespaceURI, value);
       insertChild(at.el, child, chooseRef(at.el, value, ctx.xsd, notes));
       return { ok: true, changed: { xpath: `${path}/${value}`, after: `<${value}>` }, notes };
+    }
+    // 場所の要素の子孫に子要素を足す（条件付きの BREX ルールの候補: target は親への相対の道、value は足す子の名前）
+    if (target !== undefined && target.includes('/') && value !== undefined) {
+      if (!NAME_RE.test(value)) return fail('value-malformed', `"${value}" is not an element name`);
+      const full = target.startsWith('/') ? target : `${path}/${target}`;
+      const dest = locate(ctx, full);
+      if (dest.type === 'error') return dest.outcome;
+      if (dest.type !== 'element') return fail('target-mismatch', `${full} is not an element`);
+      const notes: string[] = [];
+      const child = ctx.doc.createElementNS(dest.el.namespaceURI, value);
+      insertChild(dest.el, child, chooseRef(dest.el, value, ctx.xsd, notes));
+      notes.push(
+        `<${value}> was added empty to <${dest.el.nodeName}>; its content may still be required (verify again).`,
+      );
+      return { ok: true, changed: { xpath: `${full}/${value}`, after: `<${value}>` }, notes };
     }
     return fail('unsupported-candidate', `Cannot add ${target ?? '(no target)'} at ${path}.`);
   }

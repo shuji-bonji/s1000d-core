@@ -250,12 +250,9 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（利用者�
     // process の sequence は、dmLoop を節点にしたので 4 → 5。知らない要素は無くなった
     expect(nodes.process).toMatchObject({ sequence: 5, if: 1 });
     expect(unknown.process).toBeUndefined();
-    // descript と pm には知らない要素が無い。proced の未知は回路遮断器（circuitBreaker…）の群だけ
-    expect(unknown.descript).toBeUndefined();
-    expect(unknown.pm).toBeUndefined();
-    expect(
-      [...(unknown.proced ?? [])].every((n) => /^circuitBreaker|^name$|^accessPointRef$/.test(n)),
-    ).toBe(true);
+    // 5 種のどれにも、知らない要素（kind: "unknown"）が無い。故障の報告（faultReporting）と回路遮断器の一覧を
+    // 節点として読むようにした後の実測（それまでは fault に 23 種類、proced に回路遮断器の 7 種類があった）
+    expect(unknown).toEqual({});
   });
 
   it('サンプル CSDB の全データモジュールを、参照する BREX の連鎖に照合できる', async () => {

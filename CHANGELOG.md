@@ -15,6 +15,15 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
 - **`dmIf` の条件の式を `attrs.expression` に読みます。** 式は評価せず、変数の宣言・代入・検査と同じ書き方の文にします（例: `not(level equal "experienced")`）。`question` は、これまでどおり人が書いた文（`expression/@humanReadableForm`）だけです。`humanReadableForm` がある式や、変数 1 つだけの式（`attrs.variableName`）でも、`attrs.expression` が入ります。これまでは、`humanReadableForm` が無く変数 1 つでもない式は、`kind: "unknown"` の子として返していました。文にできない式は、これまでどおり `unknown` の子です。
 - **繰り返し（`dmLoop`）を節点として返します。** `kind: "sequence"`・`element: "dmLoop"` の節点で、条件の式が `attrs.expression`（`humanReadableForm` があれば `attrs.humanReadableForm`）、子が前の代入（`variablePreSet`）・繰り返す `dmSeq`・後ろの代入（`assertion`）です。これまでは節点を作らずに子だけを返していたので、条件の式が外側の節点の `unknown` の子になっていました。プロセス DM の読み取りの結果は、`dmLoop` のところで階層が 1 段増えます。
 - **式の中の適用性の条件（`assert`）を文にします。** `assert(識別子 種類 "値")` の形です（例: `assert(tourFinished condition "False")`）。属性が無く文だけの `assert` は `assert("文")` です。これまでは、`assert` を含む式を `notReadElements` に `expression` と数えていました。式の中の `globalPropertyRef` は、まだ文にできません。
+- **故障の報告（`faultReporting`）を、節点として読みます。** これまでは、ほとんどの要素を `kind: "unknown"` の節点で返していました。新しい `kind` は足さず、`element` で元の要素を区別します（形は Issue 7 の `fault.xsd` と Bike Samples の 4 件から決めました）。
+  - 不具合 1 件（`isolatedFault`・`detectedFault`・`observedFault`・`correlatedFault`）は `kind: "section"` の節点で、`id` と `attrs.faultCode`・`attrs.faultType` を持ちます。**これまで `detectedFault`・`isolatedFault`・`correlatedFault` は節点を作らずに子だけを返していたので、`id` と `faultCode` が読み取りの結果にありませんでした。** fault の読み取りの結果は、ここで階層が 1 段増えます。`…Alts` の容れ物は、中身をそのまま辿ります。
+  - `detectionInfo`・`contextAndIsolationInfo`・`isolationInfo`・`basicCorrelatedFaults`・`diagnosticProcess` と、`lruItem`・`detectedLruItem`・`locateAndRepairLruItem`・`sruItem`・`detectedSruItem`・`locateAndRepairSruItem` は `section` で、書かれている属性（`detectionType`・`faultProbability` など）が `attrs` に入ります。
+  - `lru`・`sru` は `kind: "para"` の節点で、`title` が名前です。識別子は品目（`equipment` など）と同じ項目に入ります（`partNumber`・`manufacturerCode`・`natoStockNumber`・`identifiers`、`attrs.shortName`）。2 つ目からの `identNumber`・`partAndSerialNumber` と `serialNumber` は読まず、`notReadElements` に数えます。
+  - `bitMessage`・`warningMalfunction`・`assocWarningMalfunction` は `section` で、`attrs.faultCode` が `fault/@faultCode`、`refs` が `dmRef` です。中の `faultDescr` の `attrs.faultCode` はこれまでどおりです。
+  - `faultIsolationTest` は `section` で、`title` が `testDescr/testName`、`attrs` が `testType`・`testCode`、子が `testParameters`（`para`。`attrs` が `from`・`to`・`unitOfMeasure`）と `testProcedure` です。
+  - `faultContext`・`diagnosticsReason` は `para`（`text` が文）、`repair`・`testProcedure`・`faultIsolationRef` は `para`（`refs` が参照、`text` に `[→ …]`）です。`remarks` は `para` で、文が 1 つなら `text`、複数なら子の `para` です。
+  - `faultDescr` の `detailedFaultDescr` の子（`systemName`・`faultMessageBody` など）は、`faultDescr` の子の `para`（`element` が元の要素名）です。
+- **回路遮断器の一覧（`circuitBreakerDescrGroup`）を読みます。** グループとサブグループは `kind: "list"`（`attrs` に `circuitBreakerAction` など）、遮断器 1 つ（`circuitBreakerDescr`）は `listItem` で、`title` が名前、`text` が場所（`circuitBreakerLocation`）、`attrs` が `circuitBreakerRef` の属性、`identifiers` が `circuitBreakerRef` と `accessPointRef` です。手順の中のものは手順の子、条件（`reqCondCircuitBreaker`）の中のものはその条件の `para` の子です。条件の `attrs.notRead` と、`notReadElements` の `circuitBreakerDescrGroup` は無くなりました。
 - **`userEntry` の入力先の変数（`variableRef`）を、`unknown` に数えなくなりました。** 変数名はこれまでどおり `dialog` の節点の `attrs.variableName` に入ります。これまでは同じ `variableRef` が、子の `kind: "unknown"` の節点と `unknownElements` にも現れていました。
 
 ### 修正
@@ -25,13 +34,17 @@ Bike Samples の本文で、あることを知らせるだけだった残りの�
   - 対象そのものの識別（`dmAddress` などの下のコード・`issueNumber`・`inWork`）を変える候補は出しません。
   - 条件付きのルールでは、確からしさは `several` か `none` です。候補を決められなければ候補なし（`none`）で、取り除く候補は出しません。述語の無い objectPath は、これまでどおり「取り除く」を `exact` で返します。
   - この候補を作るために、`suggestFixes` は `options.xml` と XSD の定義を BREX の候補にも使います。`suggestBrexFixes` の選択項目に `document`・`engine`・`xsd` を足しました。
+- **属性が無いこと（`not(@a)`・`not(attribute::a)`）が条件の BREX ルールに、候補と注記を返します。** これまでは、足す値を決められないので候補なしでした。
+  - その属性が無い要素に属性を足して objectPath を評価し直します。1 か所に足すだけで違反が消え、足す値の出どころがあるときだけ、`add` の候補を返します（`target` は `道/@属性名`。違反の要素そのものなら `@属性名`）。値の出どころは、XSD が列挙している値と、`applicRefId` のときの文書の中の `applic` の `id` です。確からしさは `several` です（どの値を付けるかは内容の判断なので、`exact` にしません）。
+  - 属性が無い場所が複数あって 1 か所では違反が消えないとき、値の出どころが無いときは、候補なし（`none`）のままです。`note` に、属性が無い場所の数と最初の 3 つの道、使える値を書きます。Bike Samples の BREX-S1-00121（目次の `dmRef` 82 個すべてに `applicRefId` が無い）は、この形になります。
+  - `applyFix` は、`target` が `道/@属性名` の `add` を適用します。
 - **`applyFix`・`applyFixes` が `candidate-not-offered` で断るときに、食い違った項目を `notes` に書きます。** 場所が同じ提案の候補のうち、`action` と値は合うのに `target`・`position` だけが違うものがあれば、その候補の `target` を知らせます（例: `The selection has target (none), but the candidate offered at … with the same action and value has target "identAndStatusSection/dmStatus/@issueType".`）。その場所に提案が無いとき、その `action` の候補が無いとき、値が合う候補が無いときも、それぞれ文にします。照合の厳しさは変わりません（`target` を省いた選択は、これまでどおり適用しません）。
 
 ### テスト
 
-- 読み取りのテストを 2 件足し、3 件を書き直しました。条件付きのルールの候補のテストを 6 件足しました（297 件。配布物を使う 39 件はスキップ）。
+- 読み取りのテストを 3 件足し、4 件を書き直しました。条件付きのルールの候補のテストを 7 件足しました（299 件。配布物を使う 39 件はスキップ）。
 - 配布物を使うテスト（`src/content/coverage.spec.test.ts`）の上限を、読み取りの結果に無いテキスト節点 13 個 → 0 個、1 つも落とさずに読めた DM 55 件 → 59 件に変えました。`preliminaryRqmts` の往復の数（失われる要素・属性 602 個、26 件）は変わりません。
-- 配布物を使うテスト（`src/spec.test.ts`）の実測値を更新しました（プロセス DM の `sequence` 4 → 5、知らない要素 6 種類 → 0 種類）。
+- 配布物を使うテスト（`src/spec.test.ts`）の実測値を更新しました（プロセス DM の `sequence` 4 → 5）。Bike Samples の本文を構造化して読む DM のどれにも、知らない要素（`kind: "unknown"`）が無いことを確かめます。
 
 ## 0.11.0 (2026-11-16)
 

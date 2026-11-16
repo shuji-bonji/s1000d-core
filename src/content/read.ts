@@ -87,10 +87,15 @@ const TRANSPARENT = new Set([
   'isolationMainProcedure',
   'faultReporting',
   'isolateDetectedFault',
-  'detectedFault',
-  'correlatedFault',
-  'isolatedFault',
   'locateAndRepair',
+  // 同じものの別の版を並べる容れ物（どれを使うかは適用性で決まる）
+  'isolatedFaultAlts',
+  'detectedFaultAlts',
+  'observedFaultAlts',
+  'correlatedFaultAlts',
+  'warningMalfunctionAlts',
+  'assocWarningMalfunctionAlts',
+  'bitMessageAlts',
   'commonRepository',
   'tgroup',
   'tbody',
@@ -187,6 +192,41 @@ const INLINE = new Set([
   'integerValue',
   'realValue',
 ]);
+
+/**
+ * 故障の報告（faultReporting）の要素と、回路遮断器の一覧。`faultNodes` が節点にする。
+ * 値は section（子を持つまとまり）か para（文・参照・属性だけ）か list
+ */
+const FAULT: Record<string, 'section' | 'para' | 'list'> = {
+  isolatedFault: 'section',
+  detectedFault: 'section',
+  observedFault: 'section',
+  correlatedFault: 'section',
+  detectionInfo: 'section',
+  contextAndIsolationInfo: 'section',
+  isolationInfo: 'section',
+  basicCorrelatedFaults: 'section',
+  diagnosticProcess: 'section',
+  lruItem: 'section',
+  detectedLruItem: 'section',
+  locateAndRepairLruItem: 'section',
+  sruItem: 'section',
+  detectedSruItem: 'section',
+  locateAndRepairSruItem: 'section',
+  bitMessage: 'section',
+  warningMalfunction: 'section',
+  assocWarningMalfunction: 'section',
+  faultIsolationTest: 'section',
+  lru: 'para',
+  sru: 'para',
+  faultContext: 'para',
+  diagnosticsReason: 'para',
+  testParameters: 'para',
+  repair: 'para',
+  testProcedure: 'para',
+  faultIsolationRef: 'para',
+  circuitBreakerDescrGroup: 'list',
+};
 
 /** 入れ子の品目（embedded…Descr）。親の品目の子の節点として読む */
 const ITEM_EMBEDDED = new Set([
@@ -473,6 +513,7 @@ class Reader {
       return [node];
     }
     if (LOGIC.has(name)) return this.logicNodes(el);
+    if (FAULT[name]) return [this.faultNode(el)];
     if (SKIP.has(name)) return [];
     // userEntry の入力先の変数は、親の dialog の節点が attrs.variableName に読む（unknown に数えない）
     if (name === 'variableRef' && (el.parentNode as Element | null)?.nodeName === 'userEntry')
@@ -502,7 +543,11 @@ class Reader {
           node.text = descr ? this.inlineText(descr, refs) : '';
           node.children = elements(el)
             .filter((c) => c !== descr)
-            .flatMap((c) => this.readElement(c));
+            .flatMap((c) =>
+              c.nodeName === 'detailedFaultDescr'
+                ? elements(c).map((d) => this.detailedFaultPart(d))
+                : this.readElement(c),
+            );
           const parent = el.parentNode as Element | null;
           const fault = parent ? firstChild(parent, 'fault') : undefined;
           const code = fault ? attr(fault, 'faultCode') : undefined;
@@ -807,6 +852,214 @@ class Reader {
       if (ref) out.push(ref);
     }
     return out;
+  }
+
+  /**
+   * 品目を識別する子（`name`・`shortName`・`identNumber`・`natoStockNumber`・`partRef` など）を節点に写す。
+   * `lru`・`sru` に使う。読み方は requirements の品目（equipment など）と同じで、1 つ目の `identNumber` と
+   * `natoStockNumber` が節点の項目、ほかの識別子が `identifiers` に入る。2 つ目からの `identNumber`・
+   * `partAndSerialNumber` と、`serialNumber` は読んでいない（あることを知らせる）
+   */
+  private putIdentity(n: ContentNode, d: Element): void {
+    const name = firstChild(d, 'name');
+    if (name) n.title = deepText(name);
+    const attrs: Record<string, string> = { ...(n.attrs ?? {}) };
+    const shortName = firstChild(d, 'shortName');
+    if (shortName) attrs.shortName = deepText(shortName);
+    const identifiers: ContentIdentifier[] = [];
+    let identRead = false;
+    let nsnRead = false;
+    for (const c of elements(d)) {
+      if (c.nodeName === 'identNumber') {
+        if (identRead) {
+          this.markNotRead('identNumber');
+          continue;
+        }
+        identRead = true;
+        const mfc = firstChild(c, 'manufacturerCode');
+        if (mfc) n.manufacturerCode = deepText(mfc);
+        const parts = elements(c).filter((x) => x.nodeName === 'partAndSerialNumber');
+        const pn = parts[0] ? firstChild(parts[0], 'partNumber') : undefined;
+        if (pn) n.partNumber = deepText(pn);
+        for (const extra of parts.slice(1)) this.markNotRead(extra.nodeName);
+        if (parts[0] && firstChild(parts[0], 'serialNumber')) this.markNotRead('serialNumber');
+        if (firstChild(c, 'refs')) this.markNotRead('refs');
+      } else if (c.nodeName === 'natoStockNumber') {
+        const nsn = this.natoStockNumber(c);
+        if (!nsnRead) {
+          nsnRead = true;
+          if (nsn.value) n.natoStockNumber = nsn.value;
+          if (nsn.full) attrs.fullNatoStockNumber = nsn.full;
+        } else {
+          const id: ContentIdentifier = { element: c.nodeName, attrs: allAttrs(c) };
+          if (nsn.value) id.text = nsn.value;
+          identifiers.push(id);
+        }
+      } else if (ITEM_IDENTIFIERS.has(c.nodeName)) identifiers.push(this.identifier(c));
+    }
+    if (identifiers.length > 0) n.identifiers = identifiers;
+    if (Object.keys(attrs).length > 0) n.attrs = attrs;
+  }
+
+  /** `remarks`（simplePara の並び）を para の節点にする。文が 1 つなら `text`、複数なら子の para */
+  private remarksNode(el: Element): ContentNode {
+    const n = this.plainNode('para', el);
+    const kids = this.readChildren(el);
+    if (kids.length === 1 && kids[0]!.kind === 'para' && kids[0]!.children.length === 0) {
+      n.text = kids[0]!.text;
+      if (kids[0]!.refs) n.refs = kids[0]!.refs;
+    } else n.children = kids;
+    return n;
+  }
+
+  /** `detailedFaultDescr` の子（systemName・faultMessageBody など）を、要素名を残した para にする */
+  private detailedFaultPart(el: Element): ContentNode {
+    const n = this.plainNode('para', el);
+    const refs: ContentRef[] = [];
+    n.text = this.inlineText(el, refs);
+    if (refs.length > 0) n.refs = refs;
+    const identifiers = elements(el)
+      .filter((c) => ITEM_IDENTIFIERS.has(c.nodeName))
+      .map((c) => this.identifier(c));
+    if (identifiers.length > 0) n.identifiers = identifiers;
+    const attrs = this.restAttrs(el);
+    if (attrs) n.attrs = attrs;
+    return n;
+  }
+
+  /**
+   * 故障の報告（faultReporting）の要素と、回路遮断器の一覧を節点にする。新しい kind は足さず、`element` で区別する。
+   * - まとまり（`detectedFault`・`detectionInfo`・`lruItem`・`bitMessage`・`faultIsolationTest` など）: section。
+   *   書かれている属性（`faultCode`・`detectionType`・`faultProbability`・`testType` など）は `attrs`
+   * - `lru`・`sru`: para。`title` が名前、識別子は品目と同じ項目（`partNumber`・`manufacturerCode`・`identifiers` など）
+   * - `faultContext`・`diagnosticsReason`: para（`text` が文）。`testParameters`: para（`attrs` が属性）。
+   *   `repair`・`testProcedure`・`faultIsolationRef`: para（`refs` が参照、`text` に `[→ …]`）
+   * - `bitMessage`・`warningMalfunction`・`assocWarningMalfunction`: `attrs.faultCode` が `fault/@faultCode`、`refs` が `dmRef`
+   * - `faultIsolationTest`: `title` が `testDescr/testName`、`refs` が `testDescr/refs`
+   * - `circuitBreakerDescrGroup`: list。子の list がサブグループ、その子の listItem が遮断器 1 つ
+   */
+  private faultNode(el: Element): ContentNode {
+    const name = el.nodeName;
+    const shape = FAULT[name]!;
+    const n = this.plainNode(shape, el);
+    const attrs = this.restAttrs(el);
+    if (attrs) n.attrs = attrs;
+    const refs: ContentRef[] = [];
+    if (shape === 'list') return this.circuitBreakerGroup(el, n);
+    if (shape === 'para') {
+      if (name === 'lru' || name === 'sru') this.putIdentity(n, el);
+      else if (name !== 'testParameters') {
+        const text = this.inlineText(el, refs);
+        if (text) n.text = text;
+      }
+      if (refs.length > 0) n.refs = refs;
+      return n;
+    }
+    for (const c of elements(el)) {
+      switch (c.nodeName) {
+        case 'remarks':
+          n.children.push(this.remarksNode(c));
+          break;
+        case 'fault': {
+          // bitMessage などの不具合のコード（値は解釈しない）
+          const code = attr(c, 'faultCode');
+          if (code) n.attrs = { ...(n.attrs ?? {}), faultCode: code };
+          break;
+        }
+        case 'testDescr': {
+          const testName = firstChild(c, 'testName');
+          if (testName) n.title = deepText(testName);
+          refs.push(...this.refsUnder(c));
+          break;
+        }
+        default: {
+          const ref = this.refOf(c);
+          if (ref) refs.push(ref);
+          else n.children.push(...this.readElement(c));
+        }
+      }
+    }
+    if (refs.length > 0) n.refs = refs;
+    return n;
+  }
+
+  /**
+   * 回路遮断器の一覧（`circuitBreakerDescrGroup`）。グループとサブグループは list（`attrs` に操作 `circuitBreakerAction` など）、
+   * 遮断器 1 つ（`circuitBreakerDescr`）は listItem で、`title` が名前、`text` が場所（`circuitBreakerLocation`）、
+   * `attrs` が `circuitBreakerRef` の属性（遮断器の番号など）、`identifiers` が `circuitBreakerRef` と `accessPointRef`、
+   * `refs` が `internalRef` と脚注への参照。備考（`footnoteRemarks`）の文は子の para。値は解釈しない
+   */
+  private circuitBreakerGroup(el: Element, n: ContentNode): ContentNode {
+    n.ordered = false;
+    for (const c of elements(el)) {
+      if (c.nodeName === 'circuitBreakerDescrSubGroup') {
+        const sub = this.plainNode('list', c);
+        const attrs = this.restAttrs(c);
+        if (attrs) sub.attrs = attrs;
+        this.circuitBreakerGroup(c, sub);
+        n.children.push(sub);
+      } else if (c.nodeName === 'circuitBreakerDescr') {
+        n.children.push(this.circuitBreaker(c));
+      } else if (c.nodeName === 'functionalItemRef') {
+        n.identifiers = [...(n.identifiers ?? []), this.identifier(c)];
+      } else if (c.nodeName === 'footnote') {
+        const f = this.remarksNode(c);
+        const mark = attr(c, 'footnoteMark');
+        if (mark) f.attrs = { footnoteMark: mark };
+        n.children.push(f);
+      } else n.children.push(...this.readElement(c));
+    }
+    return n;
+  }
+
+  private circuitBreaker(el: Element): ContentNode {
+    const item = this.plainNode('listItem', el);
+    const refs: ContentRef[] = [];
+    const identifiers: ContentIdentifier[] = [];
+    for (const c of elements(el)) {
+      switch (c.nodeName) {
+        case 'circuitBreakerRef': {
+          const attrs = allAttrs(c);
+          if (Object.keys(attrs).length > 0) item.attrs = attrs;
+          identifiers.push(this.identifier(c));
+          break;
+        }
+        case 'accessPointRef':
+          identifiers.push(this.identifier(c));
+          break;
+        case 'name':
+          item.title = deepText(c);
+          break;
+        case 'circuitBreakerLocation':
+          item.text = this.inlineText(c, refs);
+          break;
+        case 'footnoteRemarks': {
+          const remarks = this.plainNode('para', c);
+          const text = elements(c)
+            .filter((r) => r.nodeName === 'simplePara')
+            .map((r) => deepText(r))
+            .filter(Boolean)
+            .join(' ');
+          if (text) remarks.text = text;
+          const noteRefs: ContentRef[] = [];
+          for (const r of elements(c)) {
+            const target = r.nodeName === 'footnoteRef' ? attr(r, 'internalRefId') : undefined;
+            if (target) noteRefs.push({ kind: 'internalRef', target, note: 'footnoteRef' });
+          }
+          if (noteRefs.length > 0) remarks.refs = noteRefs;
+          item.children.push(remarks);
+          break;
+        }
+        default: {
+          const ref = this.refOf(c);
+          if (ref) refs.push(ref);
+          else item.children.push(...this.readElement(c));
+        }
+      }
+    }
+    if (identifiers.length > 0) item.identifiers = identifiers;
+    if (refs.length > 0) item.refs = refs;
+    return item;
   }
 
   /** 品目の識別子（toolRef・supplyRef など）: 属性、name / shortName、参照 */
@@ -1146,11 +1399,9 @@ class Reader {
         if (r) condRefs.push(r);
       }
       if (condRefs.length > 0) n.refs = condRefs;
-      if (cond.nodeName === 'reqCondCircuitBreaker') {
-        // 回路遮断器の条件は、文と参照以外（遮断器の一覧・操作）を読んでいない
-        n.attrs = { ...(n.attrs ?? {}), notRead: 'circuitBreakerDescrGroup' };
-        this.markNotRead('circuitBreakerDescrGroup');
-      }
+      // 回路遮断器の条件: 遮断器の一覧（circuitBreakerDescrGroup）を子の list として読む
+      for (const c of elements(cond))
+        if (c.nodeName === 'circuitBreakerDescrGroup') n.children.push(this.faultNode(c));
       out.push(n);
     }
 

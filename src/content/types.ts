@@ -10,7 +10,10 @@ import type { NodeLocation } from '../brex/types.js';
 import type { IssueInfo, Language } from '../types.js';
 
 export type ContentNodeKind =
-  /** levelledPara / pmEntry / dmNode など、題名を持つまとまり */
+  /**
+   * levelledPara / pmEntry / dmNode など、題名を持つまとまり。fault の故障の報告（faultReporting）のまとまり
+   * （detectedFault・detectionInfo・lruItem・bitMessage・faultIsolationTest など）もこの kind で、`element` で区別する
+   */
   | 'section'
   | 'para'
   /** randomList / sequentialList / definitionList / attention…List */
@@ -127,7 +130,7 @@ export interface ContentNode {
   /** equipment / supply / spare の数量（`reqQuantity`）と単位（`@unitOfMeasure`）。値は解釈しない */
   quantity?: string;
   unit?: string;
-  /** equipment / supply / spare の部品番号と製造者のコード（`identNumber`） */
+  /** equipment / supply / spare と、fault の `lru`・`sru` の部品番号と製造者のコード（`identNumber`） */
   partNumber?: string;
   manufacturerCode?: string;
   /**
@@ -135,7 +138,10 @@ export interface ContentNode {
    * "6850-00-181-7933" の形（7 桁の番号は 3-4 桁）につなぐ。属性が無ければ `fullNatoStockNumber`、それも無ければ要素の文。値は解釈しない
    */
   natoStockNumber?: string;
-  /** equipment / supply / spare の、`identNumber` と 1 つ目の `natoStockNumber` 以外の識別子 */
+  /**
+   * equipment / supply / spare と `lru`・`sru` の、`identNumber` と 1 つ目の `natoStockNumber` 以外の識別子。
+   * 回路遮断器（`circuitBreakerDescr`）の `circuitBreakerRef`・`accessPointRef`、`faultMessageBody` などの `functionalItemRef` も入る
+   */
   identifiers?: ContentIdentifier[];
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */
   applicRefId?: string;

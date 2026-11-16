@@ -631,17 +631,207 @@ describe('readContent', () => {
     expect(c.unknownElements).toEqual({});
   });
 
-  it('fault: 不具合の説明（faultDescr）を、faultCode を付けた段落として読む', () => {
+  it('fault: 故障の報告（faultReporting）を、section と para の節点として読む', () => {
+    const dmRef = (info: string) =>
+      `<dmRef><dmRefIdent><dmCode modelIdentCode="KENBAIKI" systemDiffCode="A" systemCode="00" subSystemCode="0" subSubSystemCode="0" assyCode="00" disassyCode="00" disassyCodeVariant="A" infoCode="${info}" infoCodeVariant="A" itemLocationCode="A"/></dmRefIdent></dmRef>`;
+    const lru = (name: string, mfc: string, pn: string, more = '') =>
+      `<lru><name>${name}</name><identNumber><manufacturerCode>${mfc}</manufacturerCode><partAndSerialNumber><partNumber>${pn}</partNumber></partAndSerialNumber></identNumber>${more}</lru>`;
     const c = readContentFromXml(
       wrap(
         'fault',
-        `<faultReporting><isolatedFault id="f1"><fault faultCode="100FC01"/>
-        <faultDescr><descr>警告灯が点かない</descr></faultDescr></isolatedFault></faultReporting>`,
+        `<faultReporting>
+  <detectedFault id="f1" faultCode="KB001">
+    <faultDescr><descr>警告灯が点かない</descr>
+      <detailedFaultDescr><systemName>表示部</systemName><faultMessageBody>E-01 <functionalItemRef functionalItemNumber="LAMP1"/></faultMessageBody></detailedFaultDescr></faultDescr>
+    <detectionInfo detectionType="Major"><detectedLruItem faultProbability="80">${lru('警告灯', 'K0001', 'LAMP-01', '<partRef partNumberValue="LAMP-02" manufacturerCodeValue="K0001"/>')}</detectedLruItem></detectionInfo>
+    <isolateDetectedFault><lruItem>${lru('表示基板', 'K0001', 'PCB-10')}
+      <faultIsolationTest testType="Operation" testCode="T-1"><testDescr><testName>点灯の確認</testName></testDescr><testParameters from="1" to="2" unitOfMeasure="s"/><testProcedure><refs>${dmRef('341')}</refs></testProcedure></faultIsolationTest>
+      <repair><refs>${dmRef('921')}</refs></repair>
+      <sruItem><sru><name>発光素子</name></sru></sruItem>
+    </lruItem></isolateDetectedFault>
+    <remarks><simplePara>電源を切ってから作業する。</simplePara></remarks>
+  </detectedFault>
+  <correlatedFault id="c1"><basicCorrelatedFaults>
+    <bitMessage faultPartCategory="x"><fault faultCode="100FC01"/>${dmRef('412')}<faultDescr><descr>紙幣部が応答しない</descr></faultDescr></bitMessage>
+  </basicCorrelatedFaults><isolateDetectedFault><faultIsolationRef><refs>${dmRef('420')}</refs></faultIsolationRef></isolateDetectedFault>
+    <remarks><simplePara>一つ目。</simplePara><simplePara>二つ目。</simplePara></remarks></correlatedFault>
+  <observedFault id="o1" faultCode="KB002" faultType="obs"><faultDescr><descr>釣り銭が出ない</descr></faultDescr>
+    <contextAndIsolationInfo><faultContext>営業中</faultContext><isolationInfo><diagnosticProcess><diagnosticsReason>硬貨の詰まり</diagnosticsReason><repair><refs>${dmRef('921')}</refs></repair></diagnosticProcess></isolationInfo></contextAndIsolationInfo></observedFault>
+</faultReporting>`,
       ),
     );
-    expect(c.blocks.map((n) => [n.kind, n.element, n.text, n.attrs])).toEqual([
-      ['para', 'faultDescr', '警告灯が点かない', { faultCode: '100FC01' }],
+    const shape = (n: (typeof c.blocks)[number]): unknown[] => [
+      n.kind,
+      n.element,
+      ...(n.children.length > 0 ? [n.children.map(shape)] : []),
+    ];
+    expect(c.unknownElements).toEqual({});
+    expect(c.notReadElements).toEqual({});
+    const [detected, correlated, observed] = c.blocks;
+    // 不具合 1 件は section。id と faultCode（これまでは読み取りの結果に無かった）を持つ
+    expect(detected).toMatchObject({ kind: 'section', element: 'detectedFault', id: 'f1' });
+    expect(detected!.attrs).toEqual({ faultCode: 'KB001' });
+    expect(detected!.children.map(shape)).toEqual([
+      [
+        'para',
+        'faultDescr',
+        [
+          ['para', 'systemName'],
+          ['para', 'faultMessageBody'],
+        ],
+      ],
+      ['section', 'detectionInfo', [['section', 'detectedLruItem', [['para', 'lru']]]]],
+      [
+        'section',
+        'lruItem',
+        [
+          ['para', 'lru'],
+          [
+            'section',
+            'faultIsolationTest',
+            [
+              ['para', 'testParameters'],
+              ['para', 'testProcedure'],
+            ],
+          ],
+          ['para', 'repair'],
+          ['section', 'sruItem', [['para', 'sru']]],
+        ],
+      ],
+      ['para', 'remarks'],
     ]);
+    const [descr, detection, item, remarks] = detected!.children;
+    expect(descr!.text).toBe('警告灯が点かない');
+    expect(descr!.children.map((n) => [n.element, n.text])).toEqual([
+      ['systemName', '表示部'],
+      ['faultMessageBody', 'E-01'],
+    ]);
+    expect(descr!.children[1]!.identifiers).toEqual([
+      { element: 'functionalItemRef', attrs: { functionalItemNumber: 'LAMP1' } },
+    ]);
+    expect(detection!.attrs).toEqual({ detectionType: 'Major' });
+    expect(detection!.children[0]!.attrs).toEqual({ faultProbability: '80' });
+    // lru は品目と同じ項目で読む
+    expect(detection!.children[0]!.children[0]).toMatchObject({
+      kind: 'para',
+      element: 'lru',
+      title: '警告灯',
+      manufacturerCode: 'K0001',
+      partNumber: 'LAMP-01',
+      identifiers: [
+        {
+          element: 'partRef',
+          attrs: { partNumberValue: 'LAMP-02', manufacturerCodeValue: 'K0001' },
+        },
+      ],
+    });
+    const [, test, repair, sruItem] = item!.children;
+    expect(test).toMatchObject({
+      title: '点灯の確認',
+      attrs: { testType: 'Operation', testCode: 'T-1' },
+    });
+    expect(test!.children[0]!.attrs).toEqual({ from: '1', to: '2', unitOfMeasure: 's' });
+    expect(test!.children[1]!.refs?.map((r) => r.target)).toEqual([
+      'KENBAIKI-A-00-00-00-00A-341A-A',
+    ]);
+    expect(repair!.text).toBe('[→ KENBAIKI-A-00-00-00-00A-921A-A]');
+    expect(repair!.refs).toHaveLength(1);
+    expect(sruItem!.children[0]).toMatchObject({ element: 'sru', title: '発光素子' });
+    expect(remarks!.text).toBe('電源を切ってから作業する。');
+
+    // bitMessage: fault の faultCode は attrs、dmRef は refs。faultDescr の attrs.faultCode はこれまでどおり
+    expect(correlated).toMatchObject({ kind: 'section', element: 'correlatedFault', id: 'c1' });
+    const bit = correlated!.children[0]!.children[0]!;
+    expect([bit.kind, bit.element, bit.attrs]).toEqual([
+      'section',
+      'bitMessage',
+      { faultPartCategory: 'x', faultCode: '100FC01' },
+    ]);
+    expect(bit.refs?.map((r) => r.target)).toEqual(['KENBAIKI-A-00-00-00-00A-412A-A']);
+    expect(bit.children.map((n) => [n.kind, n.element, n.text, n.attrs])).toEqual([
+      ['para', 'faultDescr', '紙幣部が応答しない', { faultCode: '100FC01' }],
+    ]);
+    expect(correlated!.children[1]).toMatchObject({ kind: 'para', element: 'faultIsolationRef' });
+    expect(correlated!.children[1]!.refs).toHaveLength(1);
+    // 文が複数の remarks は、子の para
+    expect(correlated!.children[2]!.children.map((n) => n.text)).toEqual(['一つ目。', '二つ目。']);
+
+    expect(observed!.attrs).toEqual({ faultCode: 'KB002', faultType: 'obs' });
+    expect(observed!.children.map(shape)).toEqual([
+      ['para', 'faultDescr'],
+      [
+        'section',
+        'contextAndIsolationInfo',
+        [
+          ['para', 'faultContext'],
+          [
+            'section',
+            'isolationInfo',
+            [
+              [
+                'section',
+                'diagnosticProcess',
+                [
+                  ['para', 'diagnosticsReason'],
+                  ['para', 'repair'],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    expect(observed!.children[1]!.children[0]!.text).toBe('営業中');
+  });
+
+  it('proced: 回路遮断器の一覧（circuitBreakerDescrGroup）を list として読む', () => {
+    const group = `<circuitBreakerDescrGroup circuitBreakerAction="open"><circuitBreakerDescrSubGroup>
+      <circuitBreakerDescr><circuitBreakerRef circuitBreakerNumber="CB1" circuitBreakerType="eltro"/><name>主電源</name><accessPointRef accessPointNumber="AP1"><name>前面の扉</name></accessPointRef><circuitBreakerLocation>分電盤の左上</circuitBreakerLocation></circuitBreakerDescr>
+      <circuitBreakerDescr><circuitBreakerRef circuitBreakerNumber="CB2"/><name>表示部</name></circuitBreakerDescr>
+    </circuitBreakerDescrSubGroup></circuitBreakerDescrGroup>`;
+    const c = readContentFromXml(
+      wrap(
+        'proced',
+        `<procedure><preliminaryRqmts><reqCondGroup><reqCondCircuitBreaker><reqCond>遮断器を開く</reqCond>${group}</reqCondCircuitBreaker></reqCondGroup></preliminaryRqmts>
+        <mainProcedure><proceduralStep><para>遮断器を閉じる。</para>${group}</proceduralStep></mainProcedure></procedure>`,
+      ),
+    );
+    expect(c.unknownElements).toEqual({});
+    expect(c.notReadElements).toEqual({});
+    const cond = c.blocks[0]!.children[0]!;
+    expect(cond).toMatchObject({
+      kind: 'para',
+      element: 'reqCondCircuitBreaker',
+      text: '遮断器を開く',
+    });
+    expect(cond.attrs).toBeUndefined();
+    const step = c.blocks[1]!;
+    for (const list of [cond.children[0]!, step.children[0]!]) {
+      expect(list).toMatchObject({
+        kind: 'list',
+        element: 'circuitBreakerDescrGroup',
+        attrs: { circuitBreakerAction: 'open' },
+      });
+      const sub = list.children[0]!;
+      expect([sub.kind, sub.element]).toEqual(['list', 'circuitBreakerDescrSubGroup']);
+      expect(sub.children.map((n) => [n.kind, n.element, n.title, n.text, n.attrs])).toEqual([
+        [
+          'listItem',
+          'circuitBreakerDescr',
+          '主電源',
+          '分電盤の左上',
+          { circuitBreakerNumber: 'CB1', circuitBreakerType: 'eltro' },
+        ],
+        ['listItem', 'circuitBreakerDescr', '表示部', undefined, { circuitBreakerNumber: 'CB2' }],
+      ]);
+      expect(sub.children[0]!.identifiers).toEqual([
+        {
+          element: 'circuitBreakerRef',
+          attrs: { circuitBreakerNumber: 'CB1', circuitBreakerType: 'eltro' },
+        },
+        { element: 'accessPointRef', attrs: { accessPointNumber: 'AP1' }, name: '前面の扉' },
+      ]);
+    }
   });
 
   it('process: メニューの選択肢と知らせ（message）の文、変数の宣言・代入・検査を読む', () => {

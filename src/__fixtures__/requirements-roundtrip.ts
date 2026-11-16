@@ -243,6 +243,24 @@ const READ_ELEMENTS = new Set([
   'reqSafety',
   'noSafety',
   'safetyRqmts',
+  // 作業の場所・所要時間・間隔
+  'productionMaintData',
+  'workAreaLocationGroup',
+  'workLocation',
+  // 品目のほかの識別子（属性・name / shortName・参照を identifiers に返す）
+  'catalogSeqNumberRef',
+  'toolRef',
+  'materialSetRef',
+  'supplyRef',
+  'supplyRqmtRef',
+  'partRef',
+  'functionalItemRef',
+  'refs',
+  // 品目の危険性と、備考の脚注
+  'hazards',
+  'hazard',
+  'hazardRef',
+  'footnoteRemarks',
 ]);
 
 /** 中身ごと読んでいる要素（文として読む、参照として読む、節点として読む）。この下は調べない */
@@ -263,6 +281,20 @@ const READ_SUBTREES = new Set([
   'warning',
   'caution',
   'note',
+  'thresholdInterval',
+  'taskDuration',
+  'zoneRef',
+  'accessPointRef',
+  'workArea',
+  'installationLocation',
+  'productItem',
+  'symbol',
+  'hazardousClass',
+  'safetyInformation',
+  'simplePara',
+  'footnoteRef',
+  'footnote',
+  'internalRef',
 ]);
 
 /**
@@ -322,6 +354,32 @@ const READ_ATTRIBUTES: Record<string, string[]> = {
   ],
   embeddedSpareDescr: ['id', 'applicRefId', 'securityClassification', 'materialUsage'],
   natoStockNumber: ['natoSupplyClass', 'natoCodificationBureau', 'natoItemIdentNumberCore'],
+  // `*` は、書かれている属性をすべて返す要素
+  catalogSeqNumberRef: ['*'],
+  toolRef: ['*'],
+  materialSetRef: ['*'],
+  supplyRef: ['*'],
+  supplyRqmtRef: ['*'],
+  partRef: ['*'],
+  functionalItemRef: ['*'],
+  productionMaintData: ['id', 'applicRefId'],
+  workAreaLocationGroup: ['id', 'applicRefId'],
+  workLocation: ['id', 'applicRefId'],
+  thresholdInterval: ['*'],
+  taskDuration: ['*'],
+  zoneRef: ['*'],
+  accessPointRef: ['*'],
+  workArea: ['*'],
+  installationLocation: ['*'],
+  productItem: ['*'],
+  hazard: ['id', 'securityClassification'],
+  hazardRef: ['*'],
+  symbol: ['infoEntityIdent'],
+  hazardousClass: ['hazardousClassValue'],
+  safetyInformation: ['*'],
+  footnoteRemarks: ['applicRefId'],
+  footnoteRef: ['internalRefId'],
+  footnote: ['id', 'applicRefId', 'securityClassification', 'footnoteMark'],
   reqQuantity: ['unitOfMeasure'],
   safetyRqmts: ['warningRefs', 'cautionRefs'],
   warning: ['id', 'applicRefId', 'securityClassification'],
@@ -372,7 +430,7 @@ export function findSilentlyDroppedAttributes(xml: string): string[] {
     const e = n as unknown as { nodeName: string; attributes: ArrayLike<{ name: string }> };
     const read = READ_ATTRIBUTES[e.nodeName] ?? [];
     for (const a of Array.from(e.attributes))
-      if (!read.includes(a.name)) dropped.add(`${e.nodeName}/@${a.name}`);
+      if (!read.includes('*') && !read.includes(a.name)) dropped.add(`${e.nodeName}/@${a.name}`);
     const descend =
       READ_ELEMENTS.has(n.nodeName) ||
       REF_STRUCTURE.has(n.nodeName) ||

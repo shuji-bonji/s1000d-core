@@ -16,6 +16,7 @@ import { formatDmc } from '../dmc.js';
 import type { Document, Element, XmlEngine } from '../xml/engine.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
 import type {
+  ContentIdentifier,
   ContentKind,
   ContentNode,
   ContentNodeKind,
@@ -146,8 +147,10 @@ const SKIP = new Set([
   'warningsAndCautionsRef',
 ]);
 
-/** プロセス DM の変数の宣言・代入・検査。中身は読まないが、あることを `notReadElements` で知らせる */
-const LOGIC_NOT_READ = new Set([
+/**
+ * プロセス DM の変数の宣言・代入・検査。`logicNodes` が節点として読む（式は評価せず、書かれた値と演算の名前を並べた文にする）
+ */
+const LOGIC = new Set([
   'variableDeclarations',
   'variablePreSet',
   'variablePostSet',
@@ -184,16 +187,14 @@ const INLINE = new Set([
   'realValue',
 ]);
 
-/** 品目（supportEquipDescr など）の子のうち、中身を読んでいない要素（識別子以外）。入れ子の品目（embedded…Descr）は子の節点として読む */
+/** 入れ子の品目（embedded…Descr）。親の品目の子の節点として読む */
 const ITEM_EMBEDDED = new Set([
   'embeddedSupportEquipDescr',
   'embeddedSupplyDescr',
   'embeddedSpareDescr',
 ]);
 
-const ITEM_NOT_READ = new Set(['hazards', 'footnoteRemarks']);
-
-/** 品目（supportEquipDescr など）の識別子のうち、identNumber と natoStockNumber 以外の要素（要素名だけを返す） */
+/** 品目（supportEquipDescr など）の識別子のうち、identNumber と natoStockNumber 以外の要素（`identifiers` に返す） */
 const ITEM_IDENTIFIERS = new Set([
   'catalogSeqNumberRef',
   'toolRef',
@@ -203,6 +204,16 @@ const ITEM_IDENTIFIERS = new Set([
   'partRef',
   'functionalItemRef',
 ]);
+
+/** 要素に書かれている属性をすべて返す（`skip` の名前を除く） */
+function allAttrs(el: Element, skip: string[] = []): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const a of Array.from(el.attributes)) {
+    if (skip.includes(a.name) || a.value === '') continue;
+    out[a.name] = a.value;
+  }
+  return out;
+}
 
 function attr(el: Element, name: string): string | undefined {
   const v = el.getAttribute(name);
@@ -460,10 +471,8 @@ class Reader {
       if (refs.length > 0) node.refs = refs;
       return [node];
     }
-    if (SKIP.has(name)) {
-      if (LOGIC_NOT_READ.has(name)) this.markNotRead(name);
-      return [];
-    }
+    if (LOGIC.has(name)) return this.logicNodes(el);
+    if (SKIP.has(name)) return [];
     if (TRANSPARENT.has(name)) return this.readChildren(el, stepCounter);
     const kind: ContentNodeKind = BLOCKS[name] ?? 'unknown';
     if (kind === 'unknown') this.unknown[name] = (this.unknown[name] ?? 0) + 1;
@@ -521,11 +530,12 @@ class Reader {
       case 'listItem': {
         // listItem は para を持つ。短い項目は text にまとめる
         if (name === 'menuChoice') {
-          // メニューの選択肢: prompt の文を text に読む（assertion などの変数の操作は読まない）
+          // メニューの選択肢: prompt の文を text に、選んだときの変数の代入（assertion）を子に読む
           const prompt = firstChild(el, 'prompt');
           if (prompt) node.text = this.promptText(prompt, refs);
-          for (const c of elements(el))
-            if (LOGIC_NOT_READ.has(c.nodeName)) this.markNotRead(c.nodeName);
+          node.children = elements(el)
+            .filter((c) => LOGIC.has(c.nodeName))
+            .flatMap((c) => this.logicNodes(c));
           break;
         }
         const kids = this.readChildren(el);
@@ -557,10 +567,11 @@ class Reader {
               .map((h) => h.nodeValue ?? '')
               .filter(Boolean);
             if (hotspots.length > 0) r.note = `hotspots: ${hotspots.join(', ')}`;
+            // 図の改訂の理由（graphic/reasonForAmendment の文）
+            const reason = firstChild(g as Element, 'reasonForAmendment');
+            if (reason) r.reasonForAmendment = this.inlineText(reason, refs);
             refs.push(r);
-          }
-          // 図の改訂の理由（graphic/reasonForAmendment）は読んでいない
-          if (firstChild(g as Element, 'reasonForAmendment'))
+          } else if (firstChild(g as Element, 'reasonForAmendment'))
             this.markNotRead('reasonForAmendment');
         }
         // 図の凡例（legend の中の定義リストなど）は子として読む
@@ -736,6 +747,318 @@ class Reader {
     return out;
   }
 
+  /** id・applicRefId・securityClassification を写しただけの節点 */
+  private plainNode(kind: ContentNodeKind, el: Element): ContentNode {
+    const n: ContentNode = {
+      kind,
+      element: el.nodeName,
+      children: [],
+      location: describeLocation(el),
+    };
+    const id = attr(el, 'id');
+    if (id) n.id = id;
+    const applicRefId = attr(el, 'applicRefId');
+    if (applicRefId) n.applicRefId = applicRefId;
+    const security = attr(el, 'securityClassification');
+    if (security) n.securityClassification = security;
+    return n;
+  }
+
+  /** 節点に写した 3 つの属性を除いた、書かれている属性 */
+  private restAttrs(el: Element): Record<string, string> | undefined {
+    const a = allAttrs(el, ['id', 'applicRefId', 'securityClassification']);
+    return Object.keys(a).length > 0 ? a : undefined;
+  }
+
+  /** `refs` の中の参照と、直下の参照（dmRef など）を集める */
+  private refsUnder(el: Element): ContentRef[] {
+    const out: ContentRef[] = [];
+    for (const c of elements(el)) {
+      if (c.nodeName === 'refs') {
+        for (const r of elements(c)) {
+          const ref = this.refOf(r);
+          if (ref) out.push(ref);
+          else this.markNotRead(r.nodeName);
+        }
+        continue;
+      }
+      const ref = this.refOf(c);
+      if (ref) out.push(ref);
+    }
+    return out;
+  }
+
+  /** 品目の識別子（toolRef・supplyRef など）: 属性、name / shortName、参照 */
+  private identifier(el: Element): ContentIdentifier {
+    const id: ContentIdentifier = { element: el.nodeName, attrs: allAttrs(el) };
+    const name = firstChild(el, 'name');
+    if (name) id.name = deepText(name);
+    const shortName = firstChild(el, 'shortName');
+    if (shortName) id.shortName = deepText(shortName);
+    const refs = this.refsUnder(el);
+    if (refs.length > 0) id.refs = refs;
+    return id;
+  }
+
+  /**
+   * 品目の危険性（hazards）。`hazard` は list の節点（`refs` が記号の図、`attrs.hazardousClass` が区分の値の並び、
+   * 子の listItem が `safetyInformation` の文）、`hazardRef` は para の節点（`attrs.hazardIdentNumber` と参照）。値は解釈しない
+   */
+  private hazards(el: Element): ContentNode[] {
+    const out: ContentNode[] = [];
+    for (const h of elements(el)) {
+      if (h.nodeName === 'hazardRef') {
+        const n = this.plainNode('para', h);
+        const attrs = this.restAttrs(h);
+        if (attrs) n.attrs = attrs;
+        const refs = this.refsUnder(h);
+        if (refs.length > 0) n.refs = refs;
+        out.push(n);
+        continue;
+      }
+      if (h.nodeName !== 'hazard') {
+        this.markNotRead(h.nodeName);
+        continue;
+      }
+      const n = this.plainNode('list', h);
+      n.ordered = false;
+      const refs: ContentRef[] = [];
+      const classes: string[] = [];
+      for (const c of elements(h)) {
+        if (c.nodeName === 'symbol') {
+          const r = this.refOf(c);
+          if (r) refs.push(r);
+        } else if (c.nodeName === 'hazardousClass') {
+          const v = attr(c, 'hazardousClassValue');
+          if (v) classes.push(v);
+        } else if (c.nodeName === 'safetyInformation') {
+          const item = this.plainNode('listItem', c);
+          item.text = this.inlineText(c, refs);
+          const attrs = this.restAttrs(c);
+          if (attrs) item.attrs = attrs;
+          n.children.push(item);
+        } else this.markNotRead(c.nodeName);
+      }
+      if (classes.length > 0) n.attrs = { hazardousClass: classes.join(' ') };
+      if (refs.length > 0) n.refs = refs;
+      out.push(n);
+    }
+    return out;
+  }
+
+  /**
+   * 作業の場所・所要時間・間隔（productionMaintData）。節点は para で、
+   * `attrs` に taskDuration の属性（`taskDuration.unitOfMeasure` など）、子に間隔（thresholdInterval）と
+   * 場所のまとまり（workAreaLocationGroup。その子が zoneRef・accessPointRef・workLocation）を返す。値は解釈しない
+   */
+  private productionMaintData(el: Element): ContentNode {
+    const node = this.plainNode('para', el);
+    const attrs: Record<string, string> = {};
+    /** 名前と属性だけを持つ参照（zoneRef・accessPointRef・functionalItemRef）と、文だけの要素 */
+    const leaf = (c: Element): ContentNode => {
+      const n = this.plainNode('para', c);
+      const a = this.restAttrs(c);
+      if (a) n.attrs = a;
+      const name = firstChild(c, 'name');
+      const refs: ContentRef[] = this.refsUnder(c);
+      if (name) n.title = deepText(name);
+      const shortName = firstChild(c, 'shortName');
+      if (shortName) n.attrs = { ...(n.attrs ?? {}), shortName: deepText(shortName) };
+      if (!name && !shortName && elements(c).length === 0) {
+        const text = deepText(c);
+        if (text) n.text = text;
+      }
+      if (refs.length > 0) n.refs = refs;
+      return n;
+    };
+    for (const c of elements(el)) {
+      if (c.nodeName === 'taskDuration') {
+        for (const [k, v] of Object.entries(allAttrs(c))) attrs[`taskDuration.${k}`] = v;
+      } else if (c.nodeName === 'thresholdInterval') {
+        node.children.push(leaf(c));
+      } else if (c.nodeName === 'workAreaLocationGroup') {
+        const group = this.plainNode('para', c);
+        for (const g of elements(c)) {
+          if (g.nodeName !== 'workLocation') {
+            group.children.push(leaf(g));
+            continue;
+          }
+          // workLocation: 文と要素が混ざる。文は、要素の文・名前を元の順につないだものにし、要素は子にも返す
+          const loc = this.plainNode('para', g);
+          const refs: ContentRef[] = [];
+          const parts: string[] = [];
+          for (const x of Array.from(g.childNodes)) {
+            if (x.nodeType === TEXT_NODE) {
+              parts.push(x.nodeValue ?? '');
+              continue;
+            }
+            if (x.nodeType !== ELEMENT_NODE) continue;
+            const e = x as Element;
+            if (e.nodeName === 'refs') {
+              for (const r of elements(e)) {
+                const ref = this.refOf(r);
+                if (ref) refs.push(ref);
+                else this.markNotRead(r.nodeName);
+              }
+              continue;
+            }
+            const r = this.refOf(e);
+            if (r) {
+              refs.push(r);
+              parts.push(` [→ ${r.target}] `);
+              continue;
+            }
+            const child = leaf(e);
+            loc.children.push(child);
+            parts.push(` ${child.text ?? child.title ?? child.attrs?.productItemName ?? ''} `);
+          }
+          const text = norm(parts.join('')).replace(/ ([.,;:])/g, '$1');
+          if (text) loc.text = text;
+          if (refs.length > 0) loc.refs = refs;
+          group.children.push(loc);
+        }
+        node.children.push(group);
+      } else this.markNotRead(c.nodeName);
+    }
+    if (Object.keys(attrs).length > 0) node.attrs = attrs;
+    return node;
+  }
+
+  /**
+   * 式（expression）を、書かれた値と演算の名前を並べた文にする。評価はしない。
+   * 2 項の演算は `(左 演算 右)`、関数は `名前(式)`、変数は名前、文字列は引用符付き、集合は `{a, b}`。
+   * 知らない要素があれば undefined（呼び出し側が `notReadElements` に数える）
+   */
+  private expressionText(el: Element, top = true): string | undefined {
+    const kids = elements(el);
+    const one = (c: Element): string | undefined => {
+      switch (c.nodeName) {
+        case 'expression':
+          return this.expressionText(c, false);
+        case 'variableRef':
+          return attr(c, 'variableName') ?? '';
+        case 'stringValue':
+          return JSON.stringify(c.textContent ?? '');
+        case 'integerValue':
+        case 'realValue':
+          return norm(c.textContent ?? '');
+        case 'booleanValue':
+          return firstChild(c, 'trueValue') ? 'true' : firstChild(c, 'falseValue') ? 'false' : '';
+        case 'noValue':
+          return 'noValue';
+        case 'setValue': {
+          const items = elements(c).map(one);
+          return items.some((i) => i === undefined) ? undefined : `{${items.join(', ')}}`;
+        }
+        default:
+          return undefined;
+      }
+    };
+    const OPERATION: Record<string, string> = {
+      booleanOperator: 'booleanOperation',
+      numberOperator: 'numberOperation',
+      setOperator: 'setOperation',
+      stringOperator: 'stringOperation',
+    };
+    const ACTION: Record<string, string> = {
+      booleanFunction: 'booleanAction',
+      numberFunction: 'numberAction',
+      setFunction: 'setAction',
+      stringFunction: 'stringAction',
+    };
+    if (kids.length === 3 && OPERATION[kids[1]!.nodeName]) {
+      const l = one(kids[0]!);
+      const r = one(kids[2]!);
+      const op = attr(kids[1]!, OPERATION[kids[1]!.nodeName]!);
+      if (l === undefined || r === undefined || !op) return undefined;
+      return top ? `${l} ${op} ${r}` : `(${l} ${op} ${r})`;
+    }
+    if (kids.length === 2 && ACTION[kids[0]!.nodeName]) {
+      const arg = one(kids[1]!);
+      const action = attr(kids[0]!, ACTION[kids[0]!.nodeName]!);
+      if (arg === undefined || !action) return undefined;
+      return `${action}(${arg.replace(/^\((.*)\)$/, '$1')})`;
+    }
+    if (kids.length === 1) return one(kids[0]!);
+    return undefined;
+  }
+
+  /** 式を attrs に入れる。読めない式は、あることを知らせる */
+  private putExpression(attrs: Record<string, string>, key: string, owner: Element): void {
+    const expression = firstChild(owner, 'expression');
+    if (!expression) return;
+    const text = this.expressionText(expression);
+    if (text !== undefined) attrs[key] = text;
+    else this.markNotRead('expression');
+    const readable = attr(expression, 'humanReadableForm');
+    if (readable) attrs.humanReadableForm = norm(readable);
+  }
+
+  /**
+   * プロセス DM の変数の操作を節点にする。
+   * - variableDeclarations: list。子の listItem が `variable`（`attrs` に属性と、あれば `initialValue`）
+   * - variablePreSet / variablePostSet / assertion: para。`attrs.variableName` と `attrs.expression`（代入する値の式）
+   * - validate: para。`attrs.errorMessage` と `attrs.expression`（検査の式）
+   */
+  private logicNodes(el: Element): ContentNode[] {
+    const assertion = (node: ContentNode, a: Element): void => {
+      const attrs: Record<string, string> = { ...(node.attrs ?? {}) };
+      const target = firstChild(a, 'variableRef');
+      if (target) {
+        const v = attr(target, 'variableName');
+        if (v) attrs.variableName = v;
+      } else if (firstChild(a, 'globalPropertyRef')) this.markNotRead('globalPropertyRef');
+      this.putExpression(attrs, 'expression', a);
+      if (Object.keys(attrs).length > 0) node.attrs = attrs;
+    };
+    switch (el.nodeName) {
+      case 'variableDeclarations': {
+        const list = this.plainNode('list', el);
+        list.ordered = false;
+        for (const v of elements(el)) {
+          if (v.nodeName !== 'variable') {
+            this.markNotRead(v.nodeName);
+            continue;
+          }
+          const item = this.plainNode('listItem', v);
+          const attrs = this.restAttrs(v) ?? {};
+          const init = firstChild(v, 'initialize');
+          if (init) this.putExpression(attrs, 'initialValue', init);
+          if (Object.keys(attrs).length > 0) item.attrs = attrs;
+          // 変数に付く問い（dialog / dialogAlts）
+          item.children = elements(v)
+            .filter((c) => c.nodeName !== 'initialize')
+            .flatMap((c) => this.readElement(c));
+          list.children.push(item);
+        }
+        return [list];
+      }
+      case 'variablePreSet':
+      case 'variablePostSet': {
+        const node = this.plainNode('para', el);
+        const a = firstChild(el, 'assertion');
+        if (a) assertion(node, a);
+        return [node];
+      }
+      case 'assertion': {
+        const node = this.plainNode('para', el);
+        assertion(node, el);
+        return [node];
+      }
+      case 'validate': {
+        const node = this.plainNode('para', el);
+        const attrs: Record<string, string> = {};
+        const message = attr(el, 'errorMessage');
+        if (message) attrs.errorMessage = message;
+        this.putExpression(attrs, 'expression', el);
+        if (Object.keys(attrs).length > 0) node.attrs = attrs;
+        return [node];
+      }
+      default:
+        return [];
+    }
+  }
+
   readChildren(el: Element, stepCounter?: { n: number; prefix: string }): ContentNode[] {
     const out: ContentNode[] = [];
     for (const c of elements(el)) out.push(...this.readElement(c, stepCounter));
@@ -771,15 +1094,9 @@ class Reader {
       if (v) attrs[key] = v;
     };
 
-    // 作業の場所・所要時間など（productionMaintData）は読んでいない。あることを知らせる
-    for (const c of elements(el)) {
-      if (c.nodeName !== 'productionMaintData') continue;
-      this.markNotRead('productionMaintData');
-      out.push({
-        ...base('unknown', c),
-        attrs: { notRead: 'productionMaintData' },
-      });
-    }
+    // 作業の場所・所要時間・間隔（productionMaintData）
+    for (const c of elements(el))
+      if (c.nodeName === 'productionMaintData') out.push(this.productionMaintData(c));
 
     // 条件: 文（reqCond）と、あれば参照（reqCondDm の dmRef など）
     for (const cond of this.engine.selectNodes('reqCondGroup/*', el) as Element[]) {
@@ -863,50 +1180,82 @@ class Reader {
         if (qty) n.quantity = qty;
         const unit = str('reqQuantity/@unitOfMeasure', d);
         if (unit) n.unit = unit;
-        const remarks = (this.engine.selectNodes('remarks/simplePara', d) as Element[])
-          .map((r) => deepText(r))
-          .filter(Boolean);
-        if (remarks.length > 0) n.text = remarks.join(' ');
-        // identNumber と natoStockNumber 以外の識別子は、要素名だけを残す（中身は読んでいない）。
-        // natoStockNumber も、2 つ目からは読んでいない
-        const others = [
-          ...elements(d)
-            .map((c) => c.nodeName)
-            .filter((x) => ITEM_IDENTIFIERS.has(x)),
-          ...nsns.slice(1).map((c) => c.nodeName),
-        ];
+        // 備考: remarks か footnoteRemarks（どちらか一方）。footnoteRemarks の footnoteRef は、脚注への参照として返す
+        const noteEl = firstChild(d, 'remarks') ?? firstChild(d, 'footnoteRemarks');
+        const itemRefs: ContentRef[] = [];
+        if (noteEl) {
+          const remarks = elements(noteEl)
+            .filter((r) => r.nodeName === 'simplePara')
+            .map((r) => deepText(r))
+            .filter(Boolean);
+          if (remarks.length > 0) n.text = remarks.join(' ');
+          for (const r of elements(noteEl)) {
+            if (r.nodeName !== 'footnoteRef') continue;
+            const target = attr(r, 'internalRefId');
+            if (target) itemRefs.push({ kind: 'internalRef', target, note: 'footnoteRef' });
+          }
+        }
+        // identNumber と 1 つ目の natoStockNumber 以外の識別子は、属性と名前と参照を identifiers に返す
+        const identifiers: ContentIdentifier[] = [];
+        for (const c of elements(d)) {
+          if (ITEM_IDENTIFIERS.has(c.nodeName)) identifiers.push(this.identifier(c));
+          else if (c.nodeName === 'natoStockNumber' && c !== nsns[0]) {
+            const more = this.natoStockNumber(c);
+            const id: ContentIdentifier = { element: c.nodeName, attrs: allAttrs(c) };
+            if (more.value) id.text = more.value;
+            identifiers.push(id);
+          }
+        }
+        if (identifiers.length > 0) n.identifiers = identifiers;
         const attrs: Record<string, string> = {};
-        if (others.length > 0) attrs.otherIdentifiers = [...new Set(others)].join(' ');
+        // これまでの版との互換のため、識別子の要素名の並びも残す
+        if (identifiers.length > 0)
+          attrs.otherIdentifiers = [...new Set(identifiers.map((i) => i.element))].join(' ');
         if (nsn?.full) attrs.fullNatoStockNumber = nsn.full;
         put(attrs, 'shortName', str('shortName', d));
         put(attrs, 'materialUsage', attr(d, 'materialUsage'));
         put(attrs, 'supplyCategory', attr(d, 'supplyCategory'));
-        // 中身を読んでいない子（危険性、脚注）は、あることを知らせる
-        const skipped = elements(d)
-          .map((c) => c.nodeName)
-          .filter((x) => ITEM_NOT_READ.has(x));
-        for (const x of [...others, ...skipped]) this.markNotRead(x);
-        if (skipped.length > 0) attrs.notRead = [...new Set(skipped)].join(' ');
+        if (noteEl?.nodeName === 'footnoteRemarks') {
+          attrs.remarksElement = 'footnoteRemarks';
+          put(attrs, 'remarksApplicRefId', attr(noteEl, 'applicRefId'));
+        }
         if (Object.keys(attrs).length > 0) n.attrs = attrs;
-        // 入れ子の品目（工具のセットの中身など）は、同じ種類の子の節点として読む
-        n.children = elements(d)
-          .filter((c) => ITEM_EMBEDDED.has(c.nodeName))
-          .map((c) => item(kind, c));
+        if (itemRefs.length > 0) n.refs = itemRefs;
+        // 入れ子の品目（工具のセットの中身など）は同じ種類の子の節点、危険性（hazards）はその後ろの子の節点として読む
+        n.children = [
+          ...elements(d)
+            .filter((c) => ITEM_EMBEDDED.has(c.nodeName))
+            .map((c) => item(kind, c)),
+          ...elements(d)
+            .filter((c) => c.nodeName === 'hazards')
+            .flatMap((c) => this.hazards(c)),
+        ];
         return n;
       }
     };
     const items = (kind: 'equipment' | 'supply' | 'spare', expr: string) => {
       for (const d of this.engine.selectNodes(expr, el) as Element[]) out.push(item(kind, d));
     };
-    // 品目の脚注（グループの直下の footnote）は読んでいない
-    const footnotes = this.engine.selectNodes(
-      'reqSupportEquips/*/footnote | reqSupplies/*/footnote | reqSpares/*/footnote',
-      el,
-    ).length;
-    for (let i = 0; i < footnotes; i++) this.markNotRead('footnote');
+    // 品目の脚注（グループの直下の footnote。品目の footnoteRef が id で指す）は、その種類の品目の後ろに置く
+    const footnotes = (expr: string) => {
+      for (const f of this.engine.selectNodes(expr, el) as Element[]) {
+        const n = base('para', f);
+        const kids = this.readChildren(f);
+        if (kids.length === 1 && kids[0].kind === 'para' && kids[0].children.length === 0) {
+          n.text = kids[0].text;
+          if (kids[0].refs) n.refs = kids[0].refs;
+        } else n.children = kids;
+        const mark = attr(f, 'footnoteMark');
+        if (mark) n.attrs = { footnoteMark: mark };
+        out.push(n);
+      }
+    };
     items('equipment', 'reqSupportEquips/supportEquipDescrGroup/supportEquipDescr');
+    footnotes('reqSupportEquips/supportEquipDescrGroup/footnote');
     items('supply', 'reqSupplies/supplyDescrGroup/supplyDescr');
+    footnotes('reqSupplies/supplyDescrGroup/footnote');
     items('spare', 'reqSpares/spareDescrGroup/spareDescr');
+    footnotes('reqSpares/spareDescrGroup/footnote');
 
     for (const safety of this.engine.selectNodes('reqSafety/safetyRqmts', el) as Element[]) {
       out.push(...this.referencedAdmonitions(safety));

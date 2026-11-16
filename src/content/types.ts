@@ -70,6 +70,27 @@ export interface ContentRef {
   externalPubIssueDate?: string;
   /** internalRef の `@internalRefTargetType`、graphic の hotspot など */
   note?: string;
+  /** graphic の改訂の理由（`graphic/reasonForAmendment` の文） */
+  reasonForAmendment?: string;
+}
+
+/**
+ * 品目の識別子のうち、`identNumber` と 1 つ目の `natoStockNumber` 以外のもの
+ * （`toolRef`・`supplyRef`・`supplyRqmtRef`・`materialSetRef`・`catalogSeqNumberRef`・`partRef`・`functionalItemRef`、
+ * 2 つ目からの `natoStockNumber`）。属性は書かれた値のまま返す（値は解釈しない）
+ */
+export interface ContentIdentifier {
+  /** 要素名 */
+  element: string;
+  /** 要素の属性（書かれているものすべて） */
+  attrs: Record<string, string>;
+  /** `name` / `shortName` の文 */
+  name?: string;
+  shortName?: string;
+  /** `natoStockNumber` の番号（`ContentNode.natoStockNumber` と同じつなぎ方） */
+  text?: string;
+  /** 識別子が持つ参照（`refs` の中、または直下の `dmRef`） */
+  refs?: ContentRef[];
 }
 
 export interface ContentNode {
@@ -114,6 +135,8 @@ export interface ContentNode {
    * "6850-00-181-7933" の形（7 桁の番号は 3-4 桁）につなぐ。属性が無ければ `fullNatoStockNumber`、それも無ければ要素の文。値は解釈しない
    */
   natoStockNumber?: string;
+  /** equipment / supply / spare の、`identNumber` と 1 つ目の `natoStockNumber` 以外の識別子 */
+  identifiers?: ContentIdentifier[];
   /** `@applicRefId`（適用性の判定は reader が ApplicEvaluator で行う） */
   applicRefId?: string;
   /** 要素自身の `@securityClassification`（機密区分。値は解釈しない。無ければ親または DM 全体の区分に従う） */

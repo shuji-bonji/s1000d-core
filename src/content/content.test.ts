@@ -401,7 +401,7 @@ describe('readContent', () => {
     expect(node.refs).toEqual([expect.objectContaining({ kind: 'dmRef', techName: '券売機' })]);
   });
 
-  it('proced: 品目の natoStockNumber を読む（属性、fullNatoStockNumber、要素の文。2 つ目と refs は知らせる）', () => {
+  it('proced: 品目の natoStockNumber を読む（属性、fullNatoStockNumber、要素の文。2 つ目は identifiers、refs は知らせる）', () => {
     const item = (name: string, ident: string) =>
       `<supplyDescr><name>${name}</name>${ident}<reqQuantity>1</reqQuantity></supplyDescr>`;
     const c = readContentFromXml(
@@ -431,7 +431,155 @@ describe('readContent', () => {
       ['欠けた番号', '1615', undefined],
       ['2 つと参照', '9150-00-079-7374', { otherIdentifiers: 'natoStockNumber' }],
     ]);
-    expect(c.notReadElements).toEqual({ natoStockNumber: 1, refs: 1 });
+    // 2 つ目の natoStockNumber は identifiers に返す（属性は書かれた値のまま）
+    expect(pre.children[5]!.identifiers).toEqual([
+      {
+        element: 'natoStockNumber',
+        attrs: {
+          natoSupplyClass: '9150',
+          natoCodificationBureau: '00',
+          natoItemIdentNumberCore: '1866681',
+        },
+        text: '9150-00-186-6681',
+      },
+    ]);
+    expect(c.notReadElements).toEqual({ refs: 1 });
+    expect(c.unknownElements).toEqual({});
+  });
+
+  it('proced: 品目のほかの識別子・備考の脚注・危険性と、作業の場所・所要時間を読む', () => {
+    const c = readContentFromXml(
+      wrap(
+        'proced',
+        `<procedure><preliminaryRqmts>
+        <productionMaintData applicRefId="app-1">
+          <thresholdInterval thresholdUnitOfMeasure="th01">500</thresholdInterval>
+          <workAreaLocationGroup>
+            <zoneRef zoneNumber="F11"><name>前半分</name></zoneRef>
+            <accessPointRef accessPointNumber="A1" accessPointTypeValue="accpnl01"/>
+            <workLocation id="wla-1"><workArea>ハンドルの上</workArea>、<productItem productItemName="右フレーム" productItemType="pi01"/>の横。</workLocation>
+          </workAreaLocationGroup>
+          <taskDuration unitOfMeasure="h" startupDuration="0.1" procedureDuration="0.5" closeupDuration="0"/>
+        </productionMaintData>
+        <reqCondGroup><noConds/></reqCondGroup>
+        <reqSupportEquips><supportEquipDescrGroup>
+          <supportEquipDescr><name>トルクレンチ</name><toolRef toolNumber="T-100" manufacturerCodeValue="K0001"><refs>${DMREF}</refs></toolRef><reqQuantity>1</reqQuantity></supportEquipDescr>
+        </supportEquipDescrGroup></reqSupportEquips>
+        <reqSupplies><supplyDescrGroup>
+          <supplyDescr><name>洗浄液</name>
+            <supplyRef supplyNumber="CL-1" supplyNumberType="sp01"><name>クリーナー 1 号</name><shortName>CL1</shortName></supplyRef>
+            <materialSetRef materialSetIdent="MS-1">${DMREF}</materialSetRef>
+            <reqQuantity>As required</reqQuantity>
+            <footnoteRemarks><simplePara>注文の後に届く</simplePara><footnoteRef internalRefId="ftn-1"/></footnoteRemarks>
+            <hazards>
+              <hazard><symbol infoEntityIdent="ICN-K0001-00009-001-01"/><hazardousClass hazardousClassValue="hz03"/><hazardousClass hazardousClassValue="hz07"/>
+                <safetyInformation supplementalSafetyCategory="ssc01">引火しやすい</safetyInformation><safetyInformation>目に入れない</safetyInformation></hazard>
+              <hazardRef hazardIdentNumber="HZ-9">${DMREF}</hazardRef>
+            </hazards>
+          </supplyDescr>
+          <footnote id="ftn-1" footnoteMark="num"><para>在庫が無いときは購買に問い合わせる</para></footnote>
+        </supplyDescrGroup></reqSupplies>
+        <reqSpares><noSpares/></reqSpares><reqSafety><noSafety/></reqSafety></preliminaryRqmts>
+        <mainProcedure><proceduralStep><para>x</para></proceduralStep></mainProcedure>
+        <closeRqmts><reqCondGroup><noConds/></reqCondGroup></closeRqmts></procedure>`,
+      ),
+    );
+    const [pmd, tool, supply, footnote] = c.blocks[0]!.children;
+
+    // 作業の場所・所要時間・間隔
+    expect([pmd!.kind, pmd!.element, pmd!.applicRefId, pmd!.attrs]).toEqual([
+      'para',
+      'productionMaintData',
+      'app-1',
+      {
+        'taskDuration.unitOfMeasure': 'h',
+        'taskDuration.startupDuration': '0.1',
+        'taskDuration.procedureDuration': '0.5',
+        'taskDuration.closeupDuration': '0',
+      },
+    ]);
+    expect(pmd!.children.map((n) => [n.element, n.text, n.attrs])).toEqual([
+      ['thresholdInterval', '500', { thresholdUnitOfMeasure: 'th01' }],
+      ['workAreaLocationGroup', undefined, undefined],
+    ]);
+    const group = pmd!.children[1]!;
+    expect(group.children.map((n) => [n.element, n.title, n.text, n.attrs])).toEqual([
+      ['zoneRef', '前半分', undefined, { zoneNumber: 'F11' }],
+      [
+        'accessPointRef',
+        undefined,
+        undefined,
+        { accessPointNumber: 'A1', accessPointTypeValue: 'accpnl01' },
+      ],
+      ['workLocation', undefined, 'ハンドルの上 、 右フレーム の横。', undefined],
+    ]);
+    expect(group.children[2]!.id).toBe('wla-1');
+    expect(group.children[2]!.children.map((n) => [n.element, n.text, n.attrs])).toEqual([
+      ['workArea', 'ハンドルの上', undefined],
+      ['productItem', undefined, { productItemName: '右フレーム', productItemType: 'pi01' }],
+    ]);
+
+    // ほかの識別子: 属性・名前・参照
+    expect(tool!.identifiers).toEqual([
+      {
+        element: 'toolRef',
+        attrs: { toolNumber: 'T-100', manufacturerCodeValue: 'K0001' },
+        refs: [expect.objectContaining({ kind: 'dmRef', techName: '券売機' })],
+      },
+    ]);
+    expect(supply!.identifiers).toEqual([
+      {
+        element: 'supplyRef',
+        attrs: { supplyNumber: 'CL-1', supplyNumberType: 'sp01' },
+        name: 'クリーナー 1 号',
+        shortName: 'CL1',
+      },
+      {
+        element: 'materialSetRef',
+        attrs: { materialSetIdent: 'MS-1' },
+        refs: [expect.objectContaining({ kind: 'dmRef' })],
+      },
+    ]);
+    expect(supply!.attrs).toEqual({
+      otherIdentifiers: 'supplyRef materialSetRef',
+      remarksElement: 'footnoteRemarks',
+    });
+    // 備考の文と、脚注への参照
+    expect(supply!.text).toBe('注文の後に届く');
+    expect(supply!.refs).toEqual([{ kind: 'internalRef', target: 'ftn-1', note: 'footnoteRef' }]);
+    // 危険性
+    const [hazard, hazardRef] = supply!.children;
+    expect([hazard!.kind, hazard!.element, hazard!.attrs]).toEqual([
+      'list',
+      'hazard',
+      { hazardousClass: 'hz03 hz07' },
+    ]);
+    expect(hazard!.refs).toEqual([{ kind: 'graphic', target: 'ICN-K0001-00009-001-01' }]);
+    expect(hazard!.children.map((n) => [n.kind, n.element, n.text, n.attrs])).toEqual([
+      ['listItem', 'safetyInformation', '引火しやすい', { supplementalSafetyCategory: 'ssc01' }],
+      ['listItem', 'safetyInformation', '目に入れない', undefined],
+    ]);
+    expect([hazardRef!.kind, hazardRef!.element, hazardRef!.attrs]).toEqual([
+      'para',
+      'hazardRef',
+      { hazardIdentNumber: 'HZ-9' },
+    ]);
+    expect(hazardRef!.refs).toEqual([expect.objectContaining({ kind: 'dmRef' })]);
+    // グループの脚注は、その種類の品目の後ろ
+    expect([
+      footnote!.kind,
+      footnote!.element,
+      footnote!.id,
+      footnote!.text,
+      footnote!.attrs,
+    ]).toEqual([
+      'para',
+      'footnote',
+      'ftn-1',
+      '在庫が無いときは購買に問い合わせる',
+      { footnoteMark: 'num' },
+    ]);
+    expect(c.notReadElements).toEqual({});
     expect(c.unknownElements).toEqual({});
   });
 
@@ -448,33 +596,76 @@ describe('readContent', () => {
     ]);
   });
 
-  it('process: メニューの選択肢と知らせ（message）の文を読み、変数の操作は知らせる', () => {
+  it('process: メニューの選択肢と知らせ（message）の文、変数の宣言・代入・検査を読む', () => {
+    const cmp = (name: string, op: string, value: string) =>
+      `<expression><expression><variableRef variableName="${name}"/></expression><numberOperator numberOperation="${op}"/><expression><integerValue>${value}</integerValue></expression></expression>`;
     const c = readContentFromXml(
       wrap(
         'process',
-        `<process><variableDeclarations><variable variableName="level"><initialize><expression><stringValue>amateur</stringValue></expression></initialize></variable></variableDeclarations>
-        <dmSeq><dmNode id="n1"><dialog>
+        `<process><variableDeclarations>
+          <variable variableName="level" valueType="string"><initialize><expression><stringValue>amateur</stringValue></expression></initialize></variable>
+          <variable variableName="ok" valueType="boolean"><initialize><expression><booleanValue><falseValue/></booleanValue></expression></initialize></variable>
+          <variable variableName="age" valueType="integer"/>
+        </variableDeclarations>
+        <dmSeq><dmNode id="n1">
+          <variablePreSet><assertion><variableRef variableName="age"/><expression><stringValue>13</stringValue></expression></assertion></variablePreSet>
+          <dialog>
           <menu><prompt><paraBasic>自転車に乗ったことがありますか</paraBasic></prompt>
             <menuChoice><prompt><paraBasic>はい</paraBasic></prompt><assertion><variableRef variableName="level"/><expression><stringValue>experienced</stringValue></expression></assertion></menuChoice>
             <menuChoice><prompt><paraBasic>いいえ</paraBasic></prompt><noAssertions/></menuChoice>
           </menu>
           <dialogGroup><message><prompt><paraBasic>年齢は 4 から 100 まで</paraBasic></prompt><prompt><paraBasic>すべて入力してください</paraBasic></prompt></message></dialogGroup>
-        </dialog></dmNode></dmSeq></process>`,
+          <userEntry><prompt><paraBasic>年齢</paraBasic></prompt><variableRef variableName="age"/>
+            <validate errorMessage="4 から 100 まで"><expression>${cmp('age', 'greaterThanOrEqual', '4')}<booleanOperator booleanOperation="and"/>${cmp('age', 'lessThanOrEqual', '100')}</expression></validate></userEntry>
+          </dialog>
+          <variablePostSet><assertion><variableRef variableName="names"/><expression><expression><variableRef variableName="names"/></expression><setOperator setOperation="add"/><expression><variableRef variableName="name"/></expression></expression></assertion></variablePostSet>
+        </dmNode></dmSeq></process>`,
       ),
     );
-    const dialog = c.blocks[0]!.children[0]!.children[0]!;
-    const menu = dialog.children[0]!;
+    // 変数の宣言: list。初期値の式は、書かれた値を並べた文にする（評価しない）
+    const decl = c.blocks[0]!;
+    expect([decl.kind, decl.element]).toEqual(['list', 'variableDeclarations']);
+    expect(decl.children.map((n) => [n.kind, n.element, n.attrs])).toEqual([
+      [
+        'listItem',
+        'variable',
+        { variableName: 'level', valueType: 'string', initialValue: '"amateur"' },
+      ],
+      ['listItem', 'variable', { variableName: 'ok', valueType: 'boolean', initialValue: 'false' }],
+      ['listItem', 'variable', { variableName: 'age', valueType: 'integer' }],
+    ]);
+    const [pre, dialog, post] = c.blocks[1]!.children[0]!.children;
+    expect([pre!.kind, pre!.element, pre!.attrs]).toEqual([
+      'para',
+      'variablePreSet',
+      { variableName: 'age', expression: '"13"' },
+    ]);
+    expect([post!.element, post!.attrs]).toEqual([
+      'variablePostSet',
+      { variableName: 'names', expression: 'names add name' },
+    ]);
+    const menu = dialog!.children[0]!;
     expect([menu.element, menu.text]).toEqual(['menu', '自転車に乗ったことがありますか']);
     expect(menu.children.map((n) => [n.kind, n.element, n.text])).toEqual([
       ['listItem', 'menuChoice', 'はい'],
       ['listItem', 'menuChoice', 'いいえ'],
     ]);
-    expect(dialog.children[1]!.children.map((n) => [n.kind, n.element, n.text])).toEqual([
+    // 選んだときの代入は、選択肢の子
+    expect(menu.children[0]!.children.map((n) => [n.kind, n.element, n.attrs])).toEqual([
+      ['para', 'assertion', { variableName: 'level', expression: '"experienced"' }],
+    ]);
+    expect(menu.children[1]!.children).toEqual([]);
+    expect(dialog!.children[1]!.children.map((n) => [n.kind, n.element, n.text])).toEqual([
       ['para', 'prompt', '年齢は 4 から 100 まで'],
       ['para', 'prompt', 'すべて入力してください'],
     ]);
-    expect(c.notReadElements).toEqual({ variableDeclarations: 1, assertion: 1 });
-    expect(c.unknownElements).toEqual({});
+    // 入力の検査: 入れ子の式は括弧でくくる
+    const validate = dialog!.children[2]!.children.find((n) => n.element === 'validate')!;
+    expect(validate.attrs).toEqual({
+      errorMessage: '4 から 100 まで',
+      expression: '(age greaterThanOrEqual 4) and (age lessThanOrEqual 100)',
+    });
+    expect(c.notReadElements).toEqual({});
   });
 
   it('descript: 図の凡例、定義リストの見出し、折り込みの図を読む', () => {
@@ -516,7 +707,9 @@ describe('readContent', () => {
       '全体図',
       'ICN-K0001-00002-001-01',
     ]);
-    expect(c.notReadElements).toEqual({ reasonForAmendment: 1 });
+    // 図の改訂の理由は、図への参照に付く
+    expect(fig1!.refs?.[0]?.reasonForAmendment).toBe('図を足した');
+    expect(c.notReadElements).toEqual({});
     expect(c.unknownElements).toEqual({});
   });
 

@@ -37,6 +37,8 @@ function findBikeDir(dir: string): string | undefined {
  *   外部の文書の版と発行日・入れ子の品目を読むようにした後: 13 個、55 件。
  *   残りの 13 個は、どれも reader が `notReadElements` で知らせている要素の中にある
  *   （hazards 4、productionMaintData 4、variableDeclarations / variablePreSet 2、supplyRef・reasonForAmendment・footnote が各 1）
+ * - 品目の危険性・ほかの識別子・脚注、作業の場所と所要時間、変数の宣言・代入・検査、図の改訂の理由を
+ *   読むようにした後: 0 個、59 件（本文を構造化して読む DM のすべて）
  */
 const BASELINE = {
   /** 本文を構造化して読む DM の数 */
@@ -44,11 +46,11 @@ const BASELINE = {
   /** テキスト節点の数 */
   total: 1587,
   /** 読み取りの結果に無いテキスト節点の数の上限 */
-  lost: 13,
+  lost: 0,
   /** そのうち、reader が知らせていない（`notReadElements` に入っていない要素の中の）テキスト節点の数 */
   lostSilent: 0,
   /** 1 つも落とさずに読めた DM の数の下限 */
-  clean: 55,
+  clean: 59,
 };
 
 const bikeDir = findBikeDir(specDir);

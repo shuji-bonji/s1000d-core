@@ -42,28 +42,34 @@ const clean = (o: Shape): Shape => {
 };
 
 function fromContent(nodes: ContentNode[]): Shape[] {
-  return nodes
-    .filter((n) => n.kind !== 'unknown' && n.kind !== 'requirements')
-    .map((n) => {
-      if (OPAQUE.has(n.kind)) return { kind: n.kind, children: [] };
-      return clean({
-        kind: n.kind,
-        id: n.id,
-        title: n.title,
-        text: n.text === undefined ? undefined : stripRefs(n.text),
-        level: n.level,
-        number: n.number,
-        rows: n.rows,
-        question: n.question,
-        choices: n.choices?.map((c) => ({ text: c.text, next: c.nextActionRefId })),
-        refs: n.refs?.map((r) => ({
-          kind: r.kind,
-          target: r.target,
-          title: r.kind === 'internalRef' ? undefined : r.title,
-        })),
-        children: fromContent(n.children),
-      });
-    });
+  return (
+    nodes
+      // 変数の宣言（variableDeclarations）は、writer が dialog の変数から作る。DraftNode には無いので比べない
+      .filter(
+        (n) =>
+          n.kind !== 'unknown' && n.kind !== 'requirements' && n.element !== 'variableDeclarations',
+      )
+      .map((n) => {
+        if (OPAQUE.has(n.kind)) return { kind: n.kind, children: [] };
+        return clean({
+          kind: n.kind,
+          id: n.id,
+          title: n.title,
+          text: n.text === undefined ? undefined : stripRefs(n.text),
+          level: n.level,
+          number: n.number,
+          rows: n.rows,
+          question: n.question,
+          choices: n.choices?.map((c) => ({ text: c.text, next: c.nextActionRefId })),
+          refs: n.refs?.map((r) => ({
+            kind: r.kind,
+            target: r.target,
+            title: r.kind === 'internalRef' ? undefined : r.title,
+          })),
+          children: fromContent(n.children),
+        });
+      })
+  );
 }
 
 interface Counter {

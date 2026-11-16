@@ -1,5 +1,32 @@
 # Changelog
 
+## 未リリース
+
+Bike Samples の本文で、あることを知らせるだけだった残りの要素を読むようにしました。本文を構造化して読む 59 件のテキスト節点 1,587 個のうち、読み取りの結果に無いものは 13 個から 0 個になりました（s1000d-stack の DECISIONS D-31「読む側は落とさない」、docs/notes/tm-eval-progress.md）。あわせて、条件付きで禁止する BREX ルールの修正候補を直しました。次の版は 0.12.0 です（読み取りの結果と、修正候補が変わります）。
+
+### 変更（読み取りの結果が変わります）
+
+- **品目の危険性（`hazards`）を読みます。** 品目（`equipment`・`supply`・`spare`）の節点の `children` に、入れ子の品目の後ろに入ります。`hazard` は `kind: "list"`・`element: "hazard"` の節点で、`refs` が記号の図（`symbol`）、`attrs.hazardousClass` が区分の値（`hazardousClassValue`）を空白で区切ったもの、子の `listItem`（`element: "safetyInformation"`）が安全の情報の文です。`hazardRef` は `kind: "para"`・`element: "hazardRef"` の節点で、`attrs.hazardIdentNumber` と参照を持ちます。値は解釈しません。
+- **品目のほかの識別子を読みます。** `toolRef`・`supplyRef`・`supplyRqmtRef`・`materialSetRef`・`catalogSeqNumberRef`・`partRef`・`functionalItemRef` と、2 つ目からの `natoStockNumber` を、節点の `identifiers`（`ContentIdentifier` の配列）に返します。1 件は、要素名（`element`）、書かれている属性すべて（`attrs`）、`name`・`shortName` の文、参照（`refs`）です。これまでどおり `attrs.otherIdentifiers` に要素名の並びも入ります。これらを `notReadElements` に数えなくなりました。
+- **品目の備考の脚注を読みます。** `footnoteRemarks` の文は `remarks` と同じく節点の `text` に入り、`attrs.remarksElement` が `"footnoteRemarks"` になります。`footnoteRef` は `refs` に `kind: "internalRef"`・`note: "footnoteRef"` で入ります。グループの直下の `footnote` は、その種類の品目の後ろに `kind: "para"`・`element: "footnote"` の節点として返します（`attrs.footnoteMark`）。
+- **作業の場所・所要時間・間隔（`productionMaintData`）を読みます。** `requirements` の子の、`kind: "para"`・`element: "productionMaintData"` の節点です。`attrs` に `taskDuration` の属性（`taskDuration.unitOfMeasure`・`taskDuration.procedureDuration` など）、子に `thresholdInterval`（`text` が値）と `workAreaLocationGroup` が入ります。`workAreaLocationGroup` の子は `zoneRef`・`accessPointRef`（`title` が `name`、`attrs` が属性）と `workLocation`（`text` が文、子が `workArea`・`productItem` など）です。これまでは `kind: "unknown"`・`attrs.notRead` の節点 1 つでした。
+- **プロセス DM の変数の宣言・代入・検査を読みます。** `variableDeclarations` は `kind: "list"` の節点で、子の `listItem`（`element: "variable"`）の `attrs` に属性と、初期値があれば `initialValue` が入ります。`variablePreSet`・`variablePostSet`・`assertion` は `kind: "para"` の節点で、`attrs.variableName` と `attrs.expression` を持ちます。メニューの選択肢（`menuChoice`）の `assertion` は、その `listItem` の子です。`validate` は `attrs.errorMessage` と `attrs.expression` を持ちます。式は評価せず、書かれた値と演算の名前を並べた文にします（例: `(age greaterThanOrEqual 4) and (age lessThanOrEqual 100)`、`names add name`、`"amateur"`）。この書き方で表せない式（`assert` など）は、`notReadElements` に `expression` と数えます。代入先が `globalPropertyRef` のときは `globalPropertyRef` と数えます。
+- **図の改訂の理由（`graphic/reasonForAmendment`）を読みます。** 図への参照（`ContentRef`）の `reasonForAmendment` に文が入ります。
+
+### 修正
+
+- **条件付きで禁止する BREX ルールの修正候補を、条件を成り立たなくする変更にしました。** objectPath に述語がある禁止ルール（既定 BREX の禁止ルール 160 件のうち 158 件）に対して、`suggestFixes` は「この要素を取り除く」を `exact` で返していました。BREX-S1-00030 では `identAndStatusSection` を、BREX-S1-00038 では文書要素を取り除く候補になり、選べませんでした。`exact` の候補は writer が自動で適用するので、危険でもありました。
+  - objectPath に書いてある属性の比較（`@a = "v"`・`@a != "v"`）と、要素が無いこと（`not(child::e)`）を拾い、文書を 1 か所だけ変えて objectPath を評価し直します。その要素が選ばれなくなる変更だけを候補にします。属性の値は、XSD が列挙していればその中から試します。
+  - 候補の `target` は、違反の場所から見た道です（例: `identAndStatusSection/dmStatus/@issueType`、足す要素の親 `identAndStatusSection/dmStatus`）。`applyFix` がこの形の `replace` と `add` を適用します。足した要素は空です（中身は人が書きます）。
+  - 対象そのものの識別（`dmAddress` などの下のコード・`issueNumber`・`inWork`）を変える候補は出しません。
+  - 条件付きのルールでは、確からしさは `several` か `none` です。候補を決められなければ候補なし（`none`）で、取り除く候補は出しません。述語の無い objectPath は、これまでどおり「取り除く」を `exact` で返します。
+  - この候補を作るために、`suggestFixes` は `options.xml` と XSD の定義を BREX の候補にも使います。`suggestBrexFixes` の選択項目に `document`・`engine`・`xsd` を足しました。
+
+### テスト
+
+- 読み取りのテストを 1 件足し、3 件を書き直しました。条件付きのルールの候補のテストを 6 件足しました（296 件。配布物を使う 39 件はスキップ）。
+- 配布物を使うテスト（`src/content/coverage.spec.test.ts`）の上限を、読み取りの結果に無いテキスト節点 13 個 → 0 個、1 つも落とさずに読めた DM 55 件 → 59 件に変えました。`preliminaryRqmts` の往復の数（失われる要素・属性 602 個、26 件）は変わりません。
+
 ## 0.11.0 (2026-11-16)
 
 Bike Samples の本文のうち、読み取りの結果に入っていなかった文を読むようにしました（s1000d-stack の DECISIONS D-31「読む側は落とさない」、docs/notes/tm-eval-progress.md）。読み取りの結果に無いテキスト節点は 66 個から 13 個になり、残りの 13 個はどれも `notReadElements` で知らせている要素の中にあります。次の版は 0.11.0 です（読み取りの結果が変わります）。

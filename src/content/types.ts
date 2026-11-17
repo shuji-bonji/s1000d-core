@@ -50,6 +50,32 @@ export type ContentNodeKind =
   /** 読み取り部分が知らない要素（名前は `element` に残す） */
   | 'unknown';
 
+/**
+ * 変更の印（XSD の `changeAttGroup` の 3 つの属性）。書かれた値のまま返す（値は解釈しない）。
+ * 3 つとも書かれていない要素には付かない
+ */
+export interface ChangeAttributes {
+  /** `@changeType`（`add`・`delete`・`modify`） */
+  changeType?: string;
+  /** `@changeMark`（"0" か "1"） */
+  changeMark?: string;
+  /** `@reasonForUpdateRefIds` を空白で分けたもの。識別・状態部の `reasonForUpdate/@id` を指す */
+  reasonForUpdateRefIds?: string[];
+}
+
+/**
+ * 変更の印を持つ要素の 1 件（`DataModuleContent.changeMarks`）。節点にならない要素（`title`、表の `row`、
+ * 手順の `text` にまとめた `para`、行内の `changeInline` など）と、本文を構造化して読まない種類の DM の要素も入る
+ */
+export interface ChangeMark extends ChangeAttributes {
+  /** 要素名 */
+  element: string;
+  /** 要素の場所（`NodeLocation` と同じ 3 つの値） */
+  path: string;
+  line?: number;
+  column?: number;
+}
+
 export interface ContentRef {
   kind: 'dmRef' | 'pmRef' | 'internalRef' | 'externalPubRef' | 'graphic' | 'multimedia';
   /** DMC・PMC・id・実体名・外部文書の識別 */
@@ -75,6 +101,8 @@ export interface ContentRef {
   note?: string;
   /** graphic の改訂の理由（`graphic/reasonForAmendment` の文） */
   reasonForAmendment?: string;
+  /** 参照の要素自身の変更の印 */
+  change?: ChangeAttributes;
 }
 
 /**
@@ -149,10 +177,17 @@ export interface ContentNode {
   securityClassification?: string;
   /** この節点自身が持つ参照 */
   refs?: ContentRef[];
-  /** その他の属性（process の variableName、式を文にした expression、changeMark など） */
+  /** 要素自身の変更の印（`changeType`・`changeMark`・`reasonForUpdateRefIds`）。値は解釈しない */
+  change?: ChangeAttributes;
+  /** その他の属性（process の variableName、式を文にした expression など） */
   attrs?: Record<string, string>;
   children: ContentNode[];
   location: NodeLocation;
+  /**
+   * step だけ: `text` にまとめた段落（直下の、子を持たない `para`）ごとの場所を、並びの順に。
+   * その段落だけを取り除く・移す編集（`editContent`）の場所に使う。まとめた段落が無ければ付かない
+   */
+  textLocations?: NodeLocation[];
 }
 
 export type ContentKind = 'descript' | 'proced' | 'process' | 'fault' | 'pm' | 'other';
@@ -174,6 +209,11 @@ export interface DataModuleContent {
    * 応答に含まれていない内容があることを知らせる。空なら、読み取り部分が知っている範囲では落としたものは無い
    */
   notReadElements: Record<string, number>;
+  /**
+   * 変更の印を持つ要素の一覧（文書の順）。3 つの属性のどれかを持つ要素と、`changeInline` をすべて返す。
+   * 識別・状態部の要素も入る。`structured` が false の DM でも返す。1 つも無ければ空
+   */
+  changeMarks: ChangeMark[];
 }
 
 /** 概要（outline）の節点。見出し・手順の番号・最初の 1 文と、部分木の大きさだけを持つ */

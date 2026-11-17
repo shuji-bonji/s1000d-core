@@ -42,6 +42,37 @@ describe('readDataModuleInfo', () => {
     expect(ident.brexDmRef!.issueInfo).toEqual({ issueNumber: '001', inWork: '00' });
   });
 
+  it('更新の理由（reasonForUpdate）を、並びの順に読む（値は解釈しない）', () => {
+    const dmCode =
+      '<dmCode modelIdentCode="KENBAIKI" systemDiffCode="A" systemCode="10" subSystemCode="2" subSubSystemCode="0" assyCode="00" disassyCode="00" disassyCodeVariant="A" infoCode="040" infoCodeVariant="A" itemLocationCode="D"/>';
+    const xml = (status: string) =>
+      `<dmodule><identAndStatusSection><dmAddress><dmIdent>${dmCode}<language languageIsoCode="ja" countryIsoCode="JP"/><issueInfo issueNumber="002" inWork="01"/></dmIdent></dmAddress><dmStatus issueType="changed">${status}</dmStatus></identAndStatusSection><content/></dmodule>`;
+    const ident = readDataModuleInfo(
+      xml(
+        `<reasonForUpdate id="rfu-0001" updateReasonType="urt02" updateHighlight="1"><simplePara>手順 3 を  足した。</simplePara><simplePara>図を差し替えた。</simplePara></reasonForUpdate>` +
+          `<reasonForUpdate id="rfu-0002" applicRefId="app-0001" controlAuthorityRefs="ca-0001"><simpleRefPara>詳細は <dmRef><dmRefIdent>${dmCode}</dmRefIdent></dmRef> を見る。</simpleRefPara></reasonForUpdate>` +
+          `<reasonForUpdate/>`,
+      ),
+    ).identAndStatus;
+    expect(ident?.reasonForUpdates).toEqual([
+      {
+        id: 'rfu-0001',
+        updateReasonType: 'urt02',
+        updateHighlight: '1',
+        paragraphs: ['手順 3 を 足した。', '図を差し替えた。'],
+      },
+      {
+        id: 'rfu-0002',
+        applicRefId: 'app-0001',
+        attrs: { controlAuthorityRefs: 'ca-0001' },
+        paragraphs: ['詳細は [→ KENBAIKI-A-10-20-00-00A-040A-D] を見る。'],
+      },
+      { paragraphs: [] },
+    ]);
+    // 1 つも無ければ、項目そのものが無い
+    expect(readDataModuleInfo(xml('')).identAndStatus?.reasonForUpdates).toBeUndefined();
+  });
+
   it('dmodule 以外のルートでは識別・状態部を持たない', () => {
     const info = readDataModuleInfo(
       '<pm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_4-2/xml_schema_flat/pm.xsd"/>',

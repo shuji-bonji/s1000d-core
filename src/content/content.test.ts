@@ -986,3 +986,108 @@ describe('readContent', () => {
     expect(c.unknownElements).toEqual({});
   });
 });
+
+describe('変更の印と、手順の text にまとめた段落の場所', () => {
+  /** 自作の手順 DM。印を、節点になる要素・参照・節点にならない要素（title・まとめた para・changeInline）に書いてある */
+  const MARKED = wrap(
+    'proced',
+    `<procedure><preliminaryRqmts><reqCondGroup><noConds/></reqCondGroup><reqSupportEquips><noSupportEquips/></reqSupportEquips><reqSupplies><noSupplies/></reqSupplies><reqSpares><noSpares/></reqSpares><reqSafety><noSafety/></reqSafety></preliminaryRqmts>
+  <mainProcedure>
+    <proceduralStep id="stp-0001" changeType="add" changeMark="1" reasonForUpdateRefIds="rfu-0001 rfu-0002"><para>扉を開ける。</para><para changeType="modify" changeMark="1" reasonForUpdateRefIds="rfu-0001">鍵を<changeInline changeMark="1" reasonForUpdateRefIds="rfu-0002">右に</changeInline>回す。</para>
+      <note changeType="delete" changeMark="0"><notePara>古い注記</notePara></note>
+      <figure><title changeType="modify">扉</title><graphic infoEntityIdent="ICN-K0001-00001-001-01" changeType="add" changeMark="1" reasonForUpdateRefIds="rfu-0001"/></figure>
+    </proceduralStep>
+    <proceduralStep><para>閉じる。</para></proceduralStep>
+    <proceduralStep><proceduralStep><para>子だけを持つ手順。</para></proceduralStep></proceduralStep>
+  </mainProcedure>
+  <closeRqmts><reqCondGroup><noConds/></reqCondGroup></closeRqmts></procedure>`,
+  );
+
+  it('節点と参照に、要素自身の変更の印を返す（値は解釈しない）', () => {
+    const c = readContentFromXml(MARKED);
+    const steps = c.blocks.filter((n) => n.kind === 'step');
+    expect(steps[0]!.change).toEqual({
+      changeType: 'add',
+      changeMark: '1',
+      reasonForUpdateRefIds: ['rfu-0001', 'rfu-0002'],
+    });
+    expect(steps[1]!.change).toBeUndefined();
+    const [note, figure] = steps[0]!.children;
+    expect([note!.kind, note!.change]).toEqual([
+      'admonition',
+      { changeType: 'delete', changeMark: '0' },
+    ]);
+    expect(figure!.refs).toEqual([
+      {
+        kind: 'graphic',
+        target: 'ICN-K0001-00001-001-01',
+        change: { changeType: 'add', changeMark: '1', reasonForUpdateRefIds: ['rfu-0001'] },
+      },
+    ]);
+    // 印の属性は attrs には入らない
+    expect(steps[0]!.attrs).toBeUndefined();
+    expect(note!.attrs).toBeUndefined();
+  });
+
+  it('changeMarks に、節点にならない要素（title・まとめた para・changeInline）の印も文書の順に返す', () => {
+    const c = readContentFromXml(MARKED);
+    expect(c.changeMarks.map((m) => [m.element, m.changeType, m.changeMark])).toEqual([
+      ['proceduralStep', 'add', '1'],
+      ['para', 'modify', '1'],
+      ['changeInline', undefined, '1'],
+      ['note', 'delete', '0'],
+      ['title', 'modify', undefined],
+      ['graphic', 'add', '1'],
+    ]);
+    const para = c.changeMarks[1]!;
+    expect(para.path).toBe('/dmodule/content/procedure/mainProcedure/proceduralStep[1]/para[2]');
+    expect(para.line).toBeGreaterThan(0);
+    expect(para.reasonForUpdateRefIds).toEqual(['rfu-0001']);
+    // changeInline の文は、これまでどおり text に入る
+    expect(c.blocks.find((n) => n.kind === 'step')!.text).toBe('扉を開ける。 鍵を右に回す。');
+    // 印が無い DM では空の配列
+    expect(readContentFromXml(PROCED).changeMarks).toEqual([]);
+  });
+
+  it('本文を構造化して読まない種類の DM でも、changeMarks を返す', () => {
+    const c = readContentFromXml(
+      wrap(
+        'wrngdata',
+        `<wiringData><wireGroup><wire changeType="add" changeMark="1" reasonForUpdateRefIds="EPWG-0001"><wireIdent><wireNumber>W1</wireNumber></wireIdent></wire></wireGroup></wiringData>`,
+      ),
+    );
+    expect(c.structured).toBe(false);
+    expect(c.blocks).toEqual([]);
+    expect(c.changeMarks).toEqual([
+      {
+        element: 'wire',
+        path: '/dmodule/content/wiringData/wireGroup/wire',
+        line: expect.any(Number),
+        column: expect.any(Number),
+        changeType: 'add',
+        changeMark: '1',
+        reasonForUpdateRefIds: ['EPWG-0001'],
+      },
+    ]);
+  });
+
+  it('手順の節点に、text にまとめた段落ごとの場所（textLocations）を並びの順に返す', () => {
+    const c = readContentFromXml(MARKED);
+    const steps = c.blocks.filter((n) => n.kind === 'step');
+    expect(steps[0]!.textLocations!.map((l) => l.path)).toEqual([
+      '/dmodule/content/procedure/mainProcedure/proceduralStep[1]/para[1]',
+      '/dmodule/content/procedure/mainProcedure/proceduralStep[1]/para[2]',
+    ]);
+    expect(steps[1]!.textLocations!.map((l) => l.path)).toEqual([
+      '/dmodule/content/procedure/mainProcedure/proceduralStep[2]/para',
+    ]);
+    // まとめた段落が無い手順には付かない
+    expect(steps[2]!.text).toBeUndefined();
+    expect(steps[2]!.textLocations).toBeUndefined();
+    // 手順のほかの節点には付かない（listItem は、段落が 1 つでも付けない）
+    const walk = (ns: ContentNode[]): ContentNode[] => ns.flatMap((n) => [n, ...walk(n.children)]);
+    expect(
+      walk(readContentFromXml(fx('kenbaiki-descript.xml')).blocks).filter((n) => n.textLocations),
+    ).toEqual([]);
+  });
+});

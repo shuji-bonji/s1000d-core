@@ -121,6 +121,25 @@ export interface DmRef {
 }
 
 /**
+ * 更新の理由（`dmStatus/reasonForUpdate`）の 1 件。値は解釈しない（`updateReasonType` の `urt01` などの意味を付けない）。
+ * 内容部の要素は、変更の印の `reasonForUpdateRefIds` でこの `id` を指す
+ */
+export interface ReasonForUpdate {
+  /** `@id` */
+  id?: string;
+  /** `@updateReasonType`（書かれた値のまま） */
+  updateReasonType?: string;
+  /** `@updateHighlight`（書かれた値のまま。"0" か "1"） */
+  updateHighlight?: string;
+  /** `@applicRefId` */
+  applicRefId?: string;
+  /** 上の 4 つのほかに書かれている属性（`controlAuthorityRefs` など） */
+  attrs?: Record<string, string>;
+  /** 子の `simplePara`・`simpleRefPara` の文を、並びの順に。DM への参照は `[→ DMC]` の形で埋め込む */
+  paragraphs: string[];
+}
+
+/**
  * 識別・状態部（`identAndStatusSection`）から読み取れる主な情報。
  * 要素が無いものは undefined。
  */
@@ -142,6 +161,8 @@ export interface IdentAndStatus {
   brexDmRef?: DmRef;
   /** `dmStatus/@issueType` */
   issueType?: string;
+  /** 更新の理由（`dmStatus/reasonForUpdate`）を、並びの順に。1 つも無ければ undefined */
+  reasonForUpdates?: ReasonForUpdate[];
   /** `qualityAssurance` の子要素名（unverified / firstVerification / secondVerification） */
   qualityAssurance?: string;
 }

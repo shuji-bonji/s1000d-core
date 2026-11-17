@@ -6,6 +6,7 @@
  * `readDataModuleInfo` で種類だけ分かり、`identAndStatus` は undefined になる。
  */
 import type { CommentCode, CommentType } from './comment/types.js';
+import { formatDmc } from './dmc.js';
 import { parseSchemaLocation } from './schema-location.js';
 import type {
   DataModuleInfo,
@@ -16,6 +17,7 @@ import type {
   Language,
   ParseResult,
   PmCode,
+  ReasonForUpdate,
 } from './types.js';
 import { defaultXmlEngine } from './xml/xmldom-fontoxpath.js';
 import type { Document, Element, Node, XmlEngine } from './xml/engine.js';
@@ -28,6 +30,59 @@ function attr(el: Element | undefined, name: string): string | undefined {
 function firstElement(engine: XmlEngine, expr: string, ctx: Node): Element | undefined {
   const n = engine.selectNodes(expr, ctx)[0];
   return n && n.nodeType === 1 ? (n as Element) : undefined;
+}
+
+function childElements(el: Element): Element[] {
+  return Array.from(el.childNodes).filter((n): n is Element => n.nodeType === 1);
+}
+
+/** 更新の理由の段落（`simplePara`・`simpleRefPara`）の文。DM への参照は `[→ DMC]` の形で埋め込む */
+function reasonParagraphText(el: Element): string {
+  const parts: string[] = [];
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType === 3 || n.nodeType === 4) {
+      parts.push(n.nodeValue ?? '');
+      continue;
+    }
+    if (n.nodeType !== 1) continue;
+    const c = n as Element;
+    if (c.nodeName === 'dmRef') {
+      const code = childElements(c)
+        .filter((e) => e.nodeName === 'dmRefIdent')
+        .flatMap((e) => childElements(e))
+        .find((e) => e.nodeName === 'dmCode');
+      const dm = code ? readDmCodeElement(code) : undefined;
+      if (dm?.ok) {
+        parts.push(` [→ ${formatDmc(dm.value)}] `);
+        continue;
+      }
+    }
+    parts.push(reasonParagraphText(c));
+  }
+  return parts.join('').replace(/\s+/g, ' ').trim();
+}
+
+/** `dmStatus` の直下の `reasonForUpdate` を、並びの順に読む。値は解釈しない */
+function readReasonForUpdates(status: Element): ReasonForUpdate[] {
+  const out: ReasonForUpdate[] = [];
+  for (const el of childElements(status)) {
+    if (el.nodeName !== 'reasonForUpdate') continue;
+    const item: ReasonForUpdate = {
+      paragraphs: childElements(el).map((p) => reasonParagraphText(p)),
+    };
+    const rest: Record<string, string> = {};
+    for (const a of Array.from(el.attributes)) {
+      if (a.value === '') continue;
+      if (a.name === 'id') item.id = a.value;
+      else if (a.name === 'updateReasonType') item.updateReasonType = a.value;
+      else if (a.name === 'updateHighlight') item.updateHighlight = a.value;
+      else if (a.name === 'applicRefId') item.applicRefId = a.value;
+      else rest[a.name] = a.value;
+    }
+    if (Object.keys(rest).length > 0) item.attrs = rest;
+    out.push(item);
+  }
+  return out;
 }
 
 /** `dmCode` 要素の属性から DmCode を組み立てる。 */
@@ -157,6 +212,8 @@ export function readIdentAndStatus(
     }
     const qa = firstElement(engine, 'qualityAssurance/*', status);
     if (qa) value.qualityAssurance = qa.nodeName;
+    const reasons = readReasonForUpdates(status);
+    if (reasons.length > 0) value.reasonForUpdates = reasons;
   }
   return { ok: true, value };
 }

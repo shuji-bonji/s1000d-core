@@ -16,6 +16,8 @@ import { formatDmc } from '../dmc.js';
 import type { Document, Element, XmlEngine } from '../xml/engine.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
 import type {
+  ChangeAttributes,
+  ChangeMark,
   ContentIdentifier,
   ContentKind,
   ContentNode,
@@ -261,6 +263,51 @@ function attr(el: Element, name: string): string | undefined {
   return v === null || v === '' ? undefined : v;
 }
 
+/** 変更の印の 3 つの属性（XSD の `changeAttGroup`） */
+const CHANGE_ATTRS = ['changeType', 'changeMark', 'reasonForUpdateRefIds'];
+
+/** 要素自身の変更の印。3 つの属性がどれも書かれていなければ undefined。値は解釈しない */
+function changeOf(el: Element): ChangeAttributes | undefined {
+  const changeType = attr(el, 'changeType');
+  const changeMark = attr(el, 'changeMark');
+  const refIds = attr(el, 'reasonForUpdateRefIds');
+  if (changeType === undefined && changeMark === undefined && refIds === undefined)
+    return undefined;
+  const out: ChangeAttributes = {};
+  if (changeType !== undefined) out.changeType = changeType;
+  if (changeMark !== undefined) out.changeMark = changeMark;
+  if (refIds !== undefined) out.reasonForUpdateRefIds = refIds.split(/\s+/).filter(Boolean);
+  return out;
+}
+
+/** 節点に、要素自身の変更の印を写す */
+function withChange(node: ContentNode, el: Element): ContentNode {
+  const change = changeOf(el);
+  if (change) node.change = change;
+  return node;
+}
+
+/**
+ * 文書の中で変更の印を持つ要素（3 つの属性のどれかを持つ要素と `changeInline`）を、文書の順に集める。
+ * 節点にならない要素と、本文を構造化して読まない種類の DM の要素も入る
+ */
+function collectChangeMarks(root: Element | null | undefined): ChangeMark[] {
+  const out: ChangeMark[] = [];
+  const walk = (el: Element) => {
+    const change = changeOf(el);
+    if (change || el.nodeName === 'changeInline') {
+      const location = describeLocation(el);
+      const mark: ChangeMark = { element: el.nodeName, path: location.path };
+      if (location.line !== undefined) mark.line = location.line;
+      if (location.column !== undefined) mark.column = location.column;
+      out.push({ ...mark, ...(change ?? {}) });
+    }
+    for (const c of elements(el)) walk(c);
+  };
+  if (root) walk(root);
+  return out;
+}
+
 function elements(el: Element): Element[] {
   return Array.from(el.childNodes).filter((n): n is Element => n.nodeType === ELEMENT_NODE);
 }
@@ -332,7 +379,17 @@ class Reader {
   }
   constructor(private readonly engine: XmlEngine) {}
 
+  /** 参照を読む。参照の要素自身の変更の印を `change` に写す */
   private refOf(el: Element): ContentRef | undefined {
+    const ref = this.refOfElement(el);
+    if (ref) {
+      const change = changeOf(el);
+      if (change) ref.change = change;
+    }
+    return ref;
+  }
+
+  private refOfElement(el: Element): ContentRef | undefined {
     switch (el.nodeName) {
       case 'dmRef': {
         const code = this.engine.selectNodes('dmRefIdent/dmCode', el)[0] as Element | undefined;
@@ -509,6 +566,7 @@ class Reader {
         text,
         location: describeLocation(el),
       };
+      withChange(node, el);
       if (refs.length > 0) node.refs = refs;
       return [node];
     }
@@ -529,6 +587,7 @@ class Reader {
     if (applicRefId) node.applicRefId = applicRefId;
     const security = attr(el, 'securityClassification');
     if (security) node.securityClassification = security;
+    withChange(node, el);
     const refs: ContentRef[] = [];
 
     const title = firstChild(el, 'title') ?? firstChild(el, 'pmEntryTitle');
@@ -666,6 +725,8 @@ class Reader {
             .filter(Boolean)
             .join(' ');
           for (const p of paras) if (p.refs) refs.push(...p.refs);
+          // まとめた段落ごとの場所（その段落だけを取り除く・移す編集の場所に使う）
+          node.textLocations = paras.map((p) => p.location);
           node.children = node.children.filter((c) => !paras.includes(c));
         }
         break;
@@ -827,12 +888,12 @@ class Reader {
     if (applicRefId) n.applicRefId = applicRefId;
     const security = attr(el, 'securityClassification');
     if (security) n.securityClassification = security;
-    return n;
+    return withChange(n, el);
   }
 
-  /** 節点に写した 3 つの属性を除いた、書かれている属性 */
+  /** 節点に写した属性（`id`・`applicRefId`・`securityClassification` と変更の印の 3 つ）を除いた、書かれている属性 */
   private restAttrs(el: Element): Record<string, string> | undefined {
-    const a = allAttrs(el, ['id', 'applicRefId', 'securityClassification']);
+    const a = allAttrs(el, ['id', 'applicRefId', 'securityClassification', ...CHANGE_ATTRS]);
     return Object.keys(a).length > 0 ? a : undefined;
   }
 
@@ -1370,7 +1431,7 @@ class Reader {
       if (applicRefId) n.applicRefId = applicRefId;
       const security = attr(e, 'securityClassification');
       if (security) n.securityClassification = security;
-      return n;
+      return withChange(n, e);
     };
     const str = (expr: string, e: Element) => {
       const v = this.engine.selectString(expr, e);
@@ -1658,6 +1719,7 @@ export function readContent(
   const schemaName = root ? readDataModuleInfoSchema(root) : undefined;
   const kind = kindOf(schemaName);
   const notes: string[] = [];
+  const changeMarks = collectChangeMarks(root);
   if (kind === 'other') {
     notes.push(
       `Content of schema "${schemaName ?? '(unknown)'}" is not structured yet; only the identification and status section is read.`,
@@ -1670,6 +1732,7 @@ export function readContent(
       notes,
       unknownElements: {},
       notReadElements: {},
+      changeMarks,
     };
   }
   const content = engine.selectNodes('/*/content', document)[0] as Element | undefined;
@@ -1683,6 +1746,7 @@ export function readContent(
       notes,
       unknownElements: {},
       notReadElements: {},
+      changeMarks,
     };
   }
   const reader = new Reader(engine);
@@ -1711,6 +1775,7 @@ export function readContent(
     notes,
     unknownElements: reader.unknown,
     notReadElements: reader.notRead,
+    changeMarks,
   };
 }
 

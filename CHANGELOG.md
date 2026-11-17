@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.14.0 (2026-11-17)
+
+更新の理由（`reasonForUpdate`）と変更の印（`changeType`・`changeMark`・`reasonForUpdateRefIds`）を読むようにしました。これまでは、どちらも読み取りの結果に無く、無いことの知らせもありませんでした（s1000d-stack の DECISIONS D-31「読む側は落とさない」、D-33 の「先に要る作業」）。あわせて、手順の `text` にまとめた段落の場所を返します（D-32）。次の版は 0.14.0 です（読み取りの結果に項目が増えます。これまでの項目は変わりません）。
+
+### 追加（読み取りの結果に項目が増えます）
+
+- **識別・状態部の更新の理由を読みます。** `IdentAndStatus.reasonForUpdates` は、`dmStatus/reasonForUpdate` を並びの順に返します。1 件は、`id`・`updateReasonType`・`updateHighlight`・`applicRefId`（書かれた値のまま）、そのほかの属性（`attrs`。`controlAuthorityRefs` など）、子の `simplePara`・`simpleRefPara` の文（`paragraphs`）です。段落の中の DM への参照は `[→ DMC]` の形で文に埋め込みます。`reasonForUpdate` が 1 つも無ければ、項目そのものがありません。`updateReasonType` の値（`urt01` など）の意味は付けません。
+- **節点と参照に、要素自身の変更の印を返します。** `ContentNode.change` と `ContentRef.change` は、`changeType`・`changeMark`（書かれた値のまま）と `reasonForUpdateRefIds`（空白で分けた配列）です。3 つの属性がどれも書かれていない要素には付きません。品目・故障の報告などの節点の `attrs` には、この 3 つの属性を入れなくなりました（`change` に入ります）。
+- **変更の印を持つ要素の一覧（`DataModuleContent.changeMarks`）を返します。** 3 つの属性のどれかを持つ要素と `changeInline` を、文書の順にすべて返します。1 件は、要素名（`element`）、場所（`path`・`line`・`column`）、3 つの属性です。節点にならない要素（`title`、表の `row`、手順の `text` にまとめた `para`、行内の `changeInline`、識別・状態部の要素）と、本文を構造化して読まない種類の DM（`structured` が false。`wrngdata` など）の要素も入ります。1 つも無ければ空の配列です。`changeInline` の中の文は、これまでどおり節点の `text` に入ります。
+- **手順の節点に、`text` にまとめた段落ごとの場所（`textLocations`）を返します。** 手順（`kind: "step"`）は、直下の子を持たない段落をすべて `text` にまとめるので、その段落には節点も `location` もありませんでした。`textLocations` は、まとめた段落ごとの `NodeLocation` を並びの順に持ちます。`editContent` の `remove`・`move` の場所（`at`）に使えます。まとめた段落が無い手順には付きません。リストの項目（`listItem`）は、段落が 1 つのときにその段落を `text` にまとめますが、`textLocations` は付けません（項目そのものを対象にします）。
+
+### 読んでいないもの
+
+- パブリケーションモジュールの `pmStatus/reasonForUpdate` は読んでいません（`IdentAndStatus` はデータモジュールの識別・状態部だけを読みます）。PM の中の変更の印は、`readContent` の `changeMarks` に入ります。
+
+### テスト
+
+- 自作の DM のテストを 5 件足しました（印を節点・参照・節点にならない要素に書いた手順 DM、本文を構造化して読まない種類の DM、更新の理由 3 件）。
+- 配布物を使うテストを 3 件足しました（`src/content/change.spec.test.ts`）。Bike Samples の DMC 106 件で、元の文字列を正規表現で数えた数と比べます。`reasonForUpdate` は 97 件に 124 個、変更の印の属性を持つ要素は 3 件に 14 個（`wire` 10・`electricalEquip` 2・`graphic` 2。12 個は本文を構造化して読まない `wrngdata` の DM）、まとめた段落が 2 つ以上の手順は 7 件に 11 個で、その 11 個すべてで、`textLocations` の場所の `para` を取り除く編集と移す編集が適用されます。
+
 ## 0.13.0 (2026-11-17)
 
 ### 追加

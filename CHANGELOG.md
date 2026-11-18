@@ -1,5 +1,34 @@
 # Changelog
 
+## 未リリース（0.15.0 の見込み）
+
+発行済みのデータモジュールを S1000D の版の決まりに沿って直すための操作を 3 つ足しました（設計は s1000d-stack の `docs/design/core-revision.md`、決定は DECISIONS の D-33）。
+
+### 追加
+
+- **作業中の版を始めます（`startRevision`）。** 発行済みの版（`inWork` が `00`）の XML から、`inWork` が `01` の XML を作ります。`issueNumber` はそのままで、`issueType` は入力の値（`changed`・`revised`・`status`。`001-00` から始めるときだけ `new` も選べます）にします。値は補いません。前の版の変更の印（3 つの属性、`changeInline` のタグ、`reasonForUpdate`）を消し、`changeType="delete"` の要素を取り除きます。取り除く要素の `id` を残る部分が指していれば、`id-referenced` で断ります。元の文字列の、書き換える範囲だけを書き換えます。`issueDate`・`qualityAssurance`・本文は変えません。DM では、作業中の版のファイル名（`fileName`）も返します。発行（`inWork` を `00` に戻し、`issueNumber` を上げる）は扱いません。
+- **`editContent` に、変更の印を付ける指定（`options.marking`）を足しました。** 渡さなければ、これまでと同じ動きです。渡したときは次のとおりです。
+  - insert は、足した要素に `changeType="add"` を付けます。
+  - remove は、要素を取り除かずに `changeType="delete"` を付けて残します（`changes[].kept` が `true`）。この作業中の版で足した要素（`changeType="add"`）は、印を付けずに取り除きます。
+  - move は、同じ親の中だけを受け付け、親に `changeType="modify"` を付けます。親が変わる移動は `move-across-parents`、印の属性を持てない親（`description`・`procedure` など）の中の移動は `parent-not-markable` で断ります。
+  - `add`・`delete` の印を持つ要素の中への編集には、印を付けません。
+  - 印を 1 つでも付けたときは、`dmStatus` の中の XSD が決める位置（`productSafety`・`remarks` の前）に `reasonForUpdate` を 1 つ足し、付けた印はすべてそれを指します。`id` を省略すると、文書に無い値（`rfu-0001` の形）を作ります。結果の `reasonForUpdate`（`added` が `true`）と `changes[].mark` に、足した理由と付けた印を返します。
+  - 同じ理由による 2 回目からの編集では、`marking.reason` の代わりに `marking.reasonRefId` に、識別・状態部に既にある `reasonForUpdate` の `id` を渡します。印はその `reasonForUpdate` を指し、識別・状態部は変えません（結果の `reasonForUpdate.added` は `false`）。同じ理由の変更が同じ `reasonForUpdate` を指す、という決まり（Chap 3.9.5.2.1.1 Para 2.1.3）に沿うための入口です。`reason` と `reasonRefId` は、どちらか一方だけを渡します。`id` が識別・状態部の `reasonForUpdate` に無ければ `marking-input-error`、その `reasonForUpdate` が `urt01` なら `editorial-reason` で断ります。
+  - 発行済みの版は、`allowReleasedIssue` があっても断ります。`issueType` が `changed`・`status`・`rinstate-changed`・`rinstate-status` でない版は `issue-type-not-markable`、`updateReasonType` が `urt01`（編集上の変更）のときは `editorial-reason` で断ります。`updateReasonType` と `changeMark` は必須です。
+  - 印を付けて残す要素の前後には、同じ呼び出しで節点を足せます（置き換えは、remove と、その隣への insert で書きます）。
+- **識別・状態部に、更新の理由だけを足します（`addReasonForUpdate`）。** `dmStatus` の中の XSD が決める位置（`productSafety`・`remarks` の前）に `reasonForUpdate` を 1 つ足します。本文には触らず、変更の印も付けません。変更の印を付けない変更の理由を書くための入口です。編集上の変更（`urt01`。この理由に結び付く変更の印があってはなりません）と、`issueType` が `revised`・`status` の版（変更の印を持てませんが、既定 BREX の BREX-S1-00038 は `reasonForUpdate` を求めます）で使います。`text` と `updateReasonType` は必須で、`id` を省略すると文書に無い値を作ります。発行済みの版は `released-issue` で断ります。ここで足した理由を、後の編集の印から指すときは、`editContent` の `marking.reasonRefId` に `id` を渡します。
+- **開始タグの中の属性の範囲を求める関数を足しました**（`scanAttributes`・`setAttributeSplice`・`removeAttributeSplice`・`attributeInsertPosition`・`escapeAttributeValue`）。属性 1 つを書き換える・足す・取り除く操作を、元の文字列の範囲として返します。
+
+### 扱っていないもの
+
+- 文の一部の変更（`changeInline` を付ける編集）、表・図への変更の印、DM の削除と復帰は扱いません。
+- `issueType` を `revised`・`status` にして作業中の版を始めると、前の版の `reasonForUpdate` が無くなるので、既定 BREX の BREX-S1-00038 が求める `reasonForUpdate` が 1 つも無い状態になります（`notes` で知らせます）。`startRevision` は理由を受け取らないので、続けて `addReasonForUpdate` を呼びます。
+
+### テスト
+
+- 自作の DM のテストを 16 件足しました（`src/revision/revision.test.ts`）。
+- 配布物を使うテストを 3 件足しました（`src/revision/revision.spec.test.ts`）。Bike Samples の DMC 106 件のうち、`issueType` が `deleted` の 3 件を除く 103 件で作業中の版を始め、取り除いた `reasonForUpdate` は 120 個、印の属性を取り除いた要素は 14 個でした。103 件とも、XSD のエラーと、版と印に関わる既定 BREX のルール（BREX-S1-00030・00032・00033・00036・00038）の違反は増えませんでした（`issueType` は `changed`）。手順 DM では、印を付けて手順を足す・取り除く編集の後も同じでした。
+
 ## 0.14.0 (2026-11-17)
 
 更新の理由（`reasonForUpdate`）と変更の印（`changeType`・`changeMark`・`reasonForUpdateRefIds`）を読むようにしました。これまでは、どちらも読み取りの結果に無く、無いことの知らせもありませんでした（s1000d-stack の DECISIONS D-31「読む側は落とさない」、D-33 の「先に要る作業」）。あわせて、手順の `text` にまとめた段落の場所を返します（D-32）。次の版は 0.14.0 です（読み取りの結果に項目が増えます。これまでの項目は変わりません）。

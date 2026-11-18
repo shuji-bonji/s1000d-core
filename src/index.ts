@@ -62,6 +62,7 @@ export * from './content/index.js';
 export * from './fix/index.js';
 export * from './segments/index.js';
 export * from './edit/index.js';
+export * from './revision/index.js';
 export * from './write/index.js';
 export * from './dml/index.js';
 export * from './comment/index.js';

@@ -1,9 +1,11 @@
-export { EDITABLE_ELEMENTS, editContent } from './edit.js';
+export { EDITABLE_ELEMENTS, MARKABLE_ISSUE_TYPES, editContent } from './edit.js';
 export type {
   AppliedEdit,
+  AppliedMark,
   ContentEdit,
   EditContentOptions,
   EditContentResult,
+  EditMarking,
   EditPosition,
   EditRefusal,
   EditRefusalReason,

@@ -11,8 +11,15 @@ export {
 } from './engine.js';
 export { XmldomFontoxpathEngine, defaultXmlEngine } from './xmldom-fontoxpath.js';
 export {
+  attributeInsertPosition,
+  escapeAttributeValue,
   rangeOfElement,
   rangesMatchDocument,
+  removeAttributeSplice,
+  scanAttributes,
   scanElementRanges,
+  setAttributeSplice,
+  type AttributeRange,
   type ElementRange,
+  type TextSplice,
 } from './ranges.js';

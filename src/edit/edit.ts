@@ -25,11 +25,14 @@ import {
   rangeOfElement,
   rangesMatchDocument,
   scanElementRanges,
+  setAttributeSplice,
   type ElementRange,
+  type TextSplice,
 } from '../xml/ranges.js';
 import { defaultXmlEngine } from '../xml/xmldom-fontoxpath.js';
 import type {
   AppliedEdit,
+  AppliedMark,
   ContentEdit,
   EditContentOptions,
   EditContentResult,
@@ -66,14 +69,14 @@ const DRAFT_PARENT: Record<string, DraftParent> = {
 };
 
 /** id を指す属性の名前（internalRefId・applicRefId・warningRefs・cautionRefs・reasonForUpdateRefIds など） */
-const ID_REFERENCE_ATTRIBUTE = /(Refs?|RefIds?)$/;
+export const ID_REFERENCE_ATTRIBUTE = /(Refs?|RefIds?)$/;
 
 const isElement = (n: Node | null | undefined): n is Element => !!n && n.nodeType === ELEMENT_NODE;
 
 const elementChildren = (n: Node): Element[] =>
   Array.from(n.childNodes).filter(isElement) as unknown as Element[];
 
-function descendantsAndSelf(el: Element): Element[] {
+export function descendantsAndSelf(el: Element): Element[] {
   const out: Element[] = [el];
   for (const c of elementChildren(el)) out.push(...descendantsAndSelf(c));
   return out;
@@ -86,23 +89,23 @@ const isInside = (node: Node, ancestor: Node): boolean => {
 
 // ---- 文字列の上の位置 ----
 
-interface Layout {
+export interface Layout {
   xml: string;
   nl: string;
   /** 字下げ 1 段分 */
   unit: string;
 }
 
-const lineStart = (xml: string, pos: number) => xml.lastIndexOf('\n', pos - 1) + 1;
+export const lineStart = (xml: string, pos: number) => xml.lastIndexOf('\n', pos - 1) + 1;
 
 /** 要素が行の先頭（前に空白だけ）から始まっているか。そうならその空白 */
-function indentOf(xml: string, r: ElementRange): string | undefined {
+export function indentOf(xml: string, r: ElementRange): string | undefined {
   const lead = xml.slice(lineStart(xml, r.start), r.start);
   return /^[ \t]*$/.test(lead) ? lead : undefined;
 }
 
 /** 要素の後ろが行末（空白だけ）か。そうなら次の行の先頭の位置 */
-function lineEndAfter(
+export function lineEndAfter(
   xml: string,
   r: ElementRange,
 ): { next: number; hasNewline: boolean } | undefined {
@@ -112,15 +115,10 @@ function lineEndAfter(
   return { next: idx < 0 ? xml.length : idx + 1, hasNewline: idx >= 0 };
 }
 
-/** 文字列への操作 1 つ。`pos` から `del` 文字を取り除き、`ins` を入れる */
-interface Splice {
-  pos: number;
-  del: number;
-  ins: string;
-}
+type Splice = TextSplice;
 
 /** 取り除く範囲。要素だけの行なら行ごと、そうでなければ要素の範囲だけ */
-function removalSpan(xml: string, r: ElementRange): { from: number; to: number } {
+export function removalSpan(xml: string, r: ElementRange): { from: number; to: number } {
   const indent = indentOf(xml, r);
   const eol = lineEndAfter(xml, r);
   if (indent !== undefined && eol) return { from: lineStart(xml, r.start), to: eol.next };
@@ -135,7 +133,11 @@ interface Placement {
   tail: string;
 }
 
-function placeBeside(layout: Layout, ref: ElementRange, side: 'before' | 'after'): Placement {
+export function placeBeside(
+  layout: Layout,
+  ref: ElementRange,
+  side: 'before' | 'after',
+): Placement {
   const { xml, nl } = layout;
   const indent = indentOf(xml, ref);
   if (side === 'before') {
@@ -152,7 +154,7 @@ function placeBeside(layout: Layout, ref: ElementRange, side: 'before' | 'after'
   return { pos: ref.end, indent: '', lead: '', tail: '' };
 }
 
-function placeInside(
+export function placeInside(
   layout: Layout,
   parent: ElementRange,
   side: 'first-child' | 'last-child',
@@ -190,7 +192,7 @@ function place(layout: Layout, ref: ElementRange, position: EditPosition): Place
 }
 
 /** 操作を位置の順に適用する。同じ位置では、足す文字列（編集の順）→ 取り除く範囲、の順 */
-function applySplices(xml: string, splices: Splice[]): string {
+export function applySplices(xml: string, splices: Splice[]): string {
   const sorted = splices
     .map((s, order) => ({ ...s, order }))
     .sort((a, b) => a.pos - b.pos || a.del - b.del || a.order - b.order);
@@ -210,7 +212,7 @@ function applySplices(xml: string, splices: Splice[]): string {
  * 組み立てた要素を文字列にする。子が要素だけなら 1 行に 1 つずつ字下げし、文を含む要素は 1 行で書く。
  * 返す文字列の 1 行目に字下げは付けない（呼ぶ側が付ける）。
  */
-function render(el: Element, indent: string, layout: Layout): string {
+export function render(el: Element, indent: string, layout: Layout): string {
   const serializer = new XMLSerializer();
   const kids = Array.from(el.childNodes);
   const hasText = kids.some(
@@ -228,7 +230,7 @@ function render(el: Element, indent: string, layout: Layout): string {
 // ---- 結果の照合 ----
 
 /** 要素・属性・文だけの署名。空白だけの文、コメント、処理命令は入れない */
-function signature(node: Node): string {
+export function signature(node: Node): string {
   if (node.nodeType === TEXT_NODE || node.nodeType === CDATA_NODE) {
     const t = (node.nodeValue ?? '').replace(/\s+/g, ' ').trim();
     return t === '' ? '' : JSON.stringify(t);
@@ -242,6 +244,60 @@ function signature(node: Node): string {
   return `<${node.nodeName} ${attrs}>${kids}</>`;
 }
 
+// ---- 識別・状態部の reasonForUpdate ----
+
+/** 文書の改行と、字下げ 1 段分を読む */
+export function layoutOf(xml: string, rootRange: ElementRange): Layout {
+  const first = rootRange.children[0];
+  const a = indentOf(xml, rootRange);
+  const b = first ? indentOf(xml, first) : undefined;
+  return {
+    xml,
+    nl: xml.includes('\r\n') ? '\r\n' : '\n',
+    unit:
+      a !== undefined && b !== undefined && b.startsWith(a) && b.length > a.length
+        ? b.slice(a.length)
+        : '  ',
+  };
+}
+
+/**
+ * 状態の要素（`dmStatus`）に `reasonForUpdate` を 1 つ足す操作を作る。
+ * 位置は XSD の順（`productSafety`・`remarks` の前。どちらも無ければ最後の子）。
+ * 返す `element` は組み立てた要素、`before` は DOM で同じ操作をするときの基準（無ければ最後に足す）。
+ */
+export function reasonForUpdateSplice(
+  layout: Layout,
+  rootRange: ElementRange,
+  statusElement: Element,
+  reason: { id: string; text: string; updateReasonType: string; updateHighlight?: string },
+): { element: Element; before: Element | undefined; splice: TextSplice } | undefined {
+  const statusRange = rangeOfElement(rootRange, statusElement);
+  const kids = elementChildren(statusElement);
+  const at = kids.findIndex((k) => AFTER_REASON_FOR_UPDATE.includes(k.nodeName));
+  const p = !statusRange
+    ? undefined
+    : at >= 0
+      ? placeBeside(layout, statusRange.children[at]!, 'before')
+      : placeInside(layout, statusRange, 'last-child');
+  if (!p) return undefined;
+  const d = newDocument();
+  const element = d.createElement('reasonForUpdate') as unknown as Element;
+  element.setAttribute('id', reason.id);
+  element.setAttribute('updateReasonType', reason.updateReasonType);
+  if (reason.updateHighlight !== undefined) {
+    element.setAttribute('updateHighlight', reason.updateHighlight);
+  }
+  const simplePara = d.createElement('simplePara');
+  simplePara.appendChild(d.createTextNode(reason.text.trim()));
+  element.appendChild(simplePara as never);
+  return {
+    element,
+    before: at >= 0 ? kids[at] : undefined,
+    splice: { pos: p.pos, del: 0, ins: p.lead + render(element, p.indent, layout) + p.tail },
+  };
+}
+
 // ---- 本体 ----
 
 interface Target {
@@ -249,6 +305,59 @@ interface Target {
   element: Element;
   range: ElementRange;
   location: NodeLocation;
+  /** `marking` で、取り除かずに `changeType="delete"` を付けて残す */
+  keep?: boolean;
+}
+
+/** 変更の印の 3 つの属性 */
+export const CHANGE_ATTRIBUTES = ['changeType', 'changeMark', 'reasonForUpdateRefIds'] as const;
+
+/** 変更の印を持てる `issueType`（BREX-S1-00036） */
+export const MARKABLE_ISSUE_TYPES: readonly string[] = [
+  'changed',
+  'rinstate-changed',
+  'status',
+  'rinstate-status',
+];
+
+/** XSD の定義が無いときに、移す節点の親として変更の印を付けられると見る要素（Issue 7 の proced.xsd・descript.xsd で確かめた） */
+const MARKABLE_PARENTS: readonly string[] = [
+  'mainProcedure',
+  'proceduralStep',
+  'levelledPara',
+  'sequentialList',
+  'randomList',
+  'listItem',
+  'para',
+  'note',
+  'warning',
+  'caution',
+];
+
+/** `dmStatus`（PM では `pmStatus`）の中で、`reasonForUpdate` より後ろに来る要素 */
+const AFTER_REASON_FOR_UPDATE: readonly string[] = ['productSafety', 'remarks'];
+
+/** 要素自身の変更の印。`changeType` が無く `changeMark` だけがあるときは、追加として扱われる（Para 2.4.1） */
+function ownChange(el: Element): 'add' | 'delete' | 'modify' | undefined {
+  const t = el.getAttribute('changeType');
+  if (t === 'add' || t === 'delete' || t === 'modify') return t;
+  return el.getAttribute('changeMark') ? 'add' : undefined;
+}
+
+/** 要素自身か先祖が、`add`・`delete` の印を持つか（その中の変更には印を付けない。Para 2.4.1） */
+function coveredByChange(el: Node | null): boolean {
+  for (let n = el; isElement(n); n = n.parentNode) {
+    const c = ownChange(n);
+    if (c === 'add' || c === 'delete') return true;
+  }
+  return false;
+}
+
+/** 識別・状態部の状態の要素（`dmStatus`・`pmStatus` など） */
+export function statusElementOf(doc: Document): Element | undefined {
+  const root = doc.documentElement;
+  const section = root && elementChildren(root).find((c) => c.nodeName === 'identAndStatusSection');
+  return section ? elementChildren(section).find((c) => /Status$/.test(c.nodeName)) : undefined;
 }
 
 interface Insertion {
@@ -314,6 +423,15 @@ export function editContent(
 
   const issueInfo = engine.selectNodes('/*/identAndStatusSection/*/*/issueInfo', doc)[0];
   const inWork = isElement(issueInfo) ? issueInfo.getAttribute('inWork') : null;
+  const marking = options.marking;
+  if (inWork === '00' && marking) {
+    refuse(
+      undefined,
+      'released-issue',
+      'The document is a released issue (issueInfo/@inWork is "00"). Change markup is added only to an in-work issue: start one with startRevision first. allowReleasedIssue does not apply when marking is given.',
+    );
+    return fail();
+  }
   if (inWork === '00' && !options.allowReleasedIssue) {
     refuse(
       undefined,
@@ -322,7 +440,13 @@ export function editContent(
     );
     return fail();
   }
-  if (inWork === '00') {
+  if (marking) {
+    notes.push(
+      marking.reasonRefId !== undefined
+        ? 'marking: the issue information (issueNumber, inWork, issueType) was not changed. Change markup refers to the reasonForUpdate named by reasonRefId; the status element was not changed.'
+        : 'marking: the issue information (issueNumber, inWork, issueType) was not changed. Change markup refers to one reasonForUpdate added to the status element.',
+    );
+  } else if (inWork === '00') {
     notes.push(
       'A released issue (issueInfo/@inWork "00") was edited in place because allowReleasedIssue is true. The issue information and change markup (changeType, changeMark, reasonForUpdate) were not changed.',
     );
@@ -339,18 +463,7 @@ export function editContent(
     );
   }
 
-  const layout: Layout = {
-    xml,
-    nl: xml.includes('\r\n') ? '\r\n' : '\n',
-    unit: (() => {
-      const first = rootRange.children[0];
-      const a = indentOf(xml, rootRange);
-      const b = first ? indentOf(xml, first) : undefined;
-      return a !== undefined && b !== undefined && b.startsWith(a) && b.length > a.length
-        ? b.slice(a.length)
-        : '  ';
-    })(),
-  };
+  const layout = layoutOf(xml, rootRange);
 
   /** 場所を 1 つの要素に決める。決まらなければ断って undefined */
   const locate = (index: number, path: string, what: string): Element | undefined => {
@@ -383,10 +496,111 @@ export function editContent(
     if (id) documentIds.add(id);
   }
 
+  // 変更の印の指定を確かめる
+  const statusElement = statusElementOf(doc);
+  let reasonId = '';
+  /** `marking.reasonRefId` が指す、文書に既にある reasonForUpdate */
+  let existingReason: Element | undefined;
+  if (marking) {
+    const r = marking.reason;
+    const refId = marking.reasonRefId;
+    const bad = (message: string) => refuse(undefined, 'marking-input-error', message);
+    if ((r === undefined) === (refId === undefined)) {
+      bad(
+        'Give exactly one of marking.reason (a new reasonForUpdate) and marking.reasonRefId (the id of a reasonForUpdate already in the document).',
+      );
+    } else if (refId !== undefined) {
+      existingReason = statusElement
+        ? elementChildren(statusElement).find(
+            (c) => c.nodeName === 'reasonForUpdate' && c.getAttribute('id') === refId,
+          )
+        : undefined;
+      if (typeof refId !== 'string' || !existingReason) {
+        const known = statusElement
+          ? elementChildren(statusElement)
+              .filter((c) => c.nodeName === 'reasonForUpdate')
+              .map((c) => c.getAttribute('id'))
+              .filter(Boolean)
+          : [];
+        bad(
+          `marking.reasonRefId "${String(refId)}" is not the id of a reasonForUpdate in the status element (ids there: ${known.length > 0 ? known.join(', ') : 'none'}).`,
+        );
+      } else if (existingReason.getAttribute('updateReasonType') === 'urt01') {
+        refuse(
+          undefined,
+          'editorial-reason',
+          `reasonForUpdate "${refId}" has updateReasonType "urt01" (an editorial change), which must not have change markup.`,
+        );
+      }
+    } else if (!r || typeof r.text !== 'string' || r.text.trim() === '') {
+      bad('marking.reason.text is required (the text of the reason for update).');
+    }
+    if (!r) {
+      // reasonRefId のとき（または、どちらも無いとき）は、reason の中身を見ない
+    } else if (typeof r.updateReasonType !== 'string' || !/^urt\d{2}$/.test(r.updateReasonType)) {
+      bad('marking.reason.updateReasonType is required (urt02 … urt99; it is never filled in).');
+    } else if (r.updateReasonType === 'urt01') {
+      refuse(
+        undefined,
+        'editorial-reason',
+        'updateReasonType "urt01" is an editorial change, which must not have change markup. Edit without marking.',
+      );
+    }
+    if (marking.changeMark !== '0' && marking.changeMark !== '1') {
+      bad('marking.changeMark is required ("1" to show a change mark, "0" not to).');
+    }
+    if (
+      r?.updateHighlight !== undefined &&
+      r.updateHighlight !== '0' &&
+      r.updateHighlight !== '1'
+    ) {
+      bad('marking.reason.updateHighlight must be "0" or "1".');
+    }
+    if (r?.id !== undefined && !/^[A-Za-z_][\w.-]*$/.test(r.id)) {
+      bad(`marking.reason.id "${r.id}" is not a valid XML ID.`);
+    } else if (r?.id !== undefined && documentIds.has(r.id)) {
+      refuse(
+        undefined,
+        'id-duplicate',
+        `marking.reason.id "${r.id}" is already used in the document.`,
+      );
+    }
+    const issueType = statusElement?.getAttribute('issueType') ?? null;
+    if (!statusElement) {
+      bad('The document has no status element (dmStatus) to add reasonForUpdate to.');
+    } else if (!issueType || !MARKABLE_ISSUE_TYPES.includes(issueType)) {
+      refuse(
+        undefined,
+        'issue-type-not-markable',
+        `issueType is ${issueType ? `"${issueType}"` : 'not written'}. Change markup is allowed only when issueType is ${MARKABLE_ISSUE_TYPES.join(', ')} (BREX-S1-00036).`,
+      );
+    }
+    if (refusals.length > 0) return fail();
+    reasonId = refId ?? r?.id ?? '';
+    for (let n = 1; reasonId === ''; n++) {
+      const candidate = `rfu-${String(n).padStart(4, '0')}`;
+      if (!documentIds.has(candidate)) reasonId = candidate;
+    }
+    documentIds.add(reasonId);
+  }
+  const markOf = (
+    changeType: AppliedMark['changeType'],
+    element: string,
+    at?: NodeLocation,
+  ): AppliedMark => ({
+    element,
+    ...(at ? { at } : {}),
+    changeType,
+    changeMark: marking!.changeMark,
+    reasonForUpdateRefId: reasonId,
+  });
+
   const targets: Target[] = [];
   const insertions: Insertion[] = [];
   const changes: AppliedEdit[] = [];
   const removed: Target[] = [];
+  /** move で `changeType="modify"` を付ける親 */
+  const parentMarks = new Map<Element, { range: ElementRange; mark: AppliedMark }>();
   const contentKind = contentKindOf(doc);
 
   edits.forEach((edit, index) => {
@@ -450,6 +664,7 @@ export function editContent(
 
       let element: Element;
       let text: (indent: string) => string;
+      let mark: AppliedMark | undefined;
       if (edit.op === 'move') {
         if (!target) return;
         if (isInside(ref, target.element)) {
@@ -457,6 +672,39 @@ export function editContent(
             location: target.location,
           });
           return;
+        }
+        if (marking) {
+          if (target.element.parentNode !== parent) {
+            refuse(
+              index,
+              'move-across-parents',
+              'With marking, a node is moved only within its parent. To move it to another parent, remove it and insert it there.',
+              { location: target.location },
+            );
+            return;
+          }
+          if (!coveredByChange(parent)) {
+            const known = parentMarks.get(parent);
+            if (known) mark = known.mark;
+            else {
+              const attrs = xsd?.allowedAttributes(parent.nodeName);
+              const markable = attrs
+                ? attrs.includes('changeType')
+                : MARKABLE_PARENTS.includes(parent.nodeName);
+              const parentRange = rangeOfElement(rootRange, parent);
+              if (!markable || !parentRange) {
+                refuse(
+                  index,
+                  'parent-not-markable',
+                  `<${parent.nodeName}> cannot carry change markup, so a move inside it cannot be marked. Remove the node and insert it at the new place instead.`,
+                  { location: describeLocation(parent) },
+                );
+                return;
+              }
+              mark = markOf('modify', parent.nodeName, describeLocation(parent));
+              parentMarks.set(parent, { range: parentRange, mark });
+            }
+          }
         }
         element = target.element;
         const moved = xml.slice(target.range.start, target.range.end);
@@ -491,6 +739,12 @@ export function editContent(
           });
           return;
         }
+        if (marking && !coveredByChange(parent)) {
+          element.setAttribute('changeType', 'add');
+          element.setAttribute('changeMark', marking.changeMark);
+          element.setAttribute('reasonForUpdateRefIds', reasonId);
+          mark = markOf('add', element.nodeName);
+        }
         const built = element;
         text = (indent) => render(built, indent, layout);
       }
@@ -513,10 +767,32 @@ export function editContent(
         to: refLocation,
         position: edit.position,
         element: element.nodeName,
+        ...(mark ? { mark } : {}),
       });
     } else if (target) {
+      let mark: AppliedMark | undefined;
+      if (marking) {
+        const own = ownChange(target.element);
+        if (own === 'delete') {
+          refuse(index, 'already-marked-deleted', 'The node already has changeType="delete".', {
+            location: target.location,
+          });
+          return;
+        }
+        // この作業中の版で足した要素と、add・delete の要素の中は、印を付けずに取り除く
+        if (own !== 'add' && !coveredByChange(target.element.parentNode)) {
+          target.keep = true;
+          mark = markOf('delete', target.element.nodeName, target.location);
+        }
+      }
       removed.push(target);
-      changes.push({ index, op: 'remove', at: target.location, element: target.element.nodeName });
+      changes.push({
+        index,
+        op: 'remove',
+        at: target.location,
+        element: target.element.nodeName,
+        ...(mark ? { mark, kept: true } : {}),
+      });
     }
     if (target) targets.push(target);
   });
@@ -538,7 +814,14 @@ export function editContent(
     }
   }
   for (const ins of insertions) {
-    const other = targets.find((t) => t.element !== ins.element && isInside(ins.ref, t.element));
+    const beside = ins.position === 'before' || ins.position === 'after';
+    const other = targets.find(
+      (t) =>
+        t.element !== ins.element &&
+        isInside(ins.ref, t.element) &&
+        // 印を付けて残す要素の前後には足せる（置き換えは、remove と、その隣への insert で書く）
+        !(t.keep && beside && ins.ref === t.element),
+    );
     if (other) {
       refuse(
         ins.index,
@@ -584,9 +867,54 @@ export function editContent(
 
   // 文字列への操作
   const splices: Splice[] = [];
+  const markAttributes = (range: ElementRange, changeType: string, refIds: string) => {
+    splices.push(setAttributeSplice(xml, range, 'changeType', changeType));
+    splices.push(setAttributeSplice(xml, range, 'changeMark', marking!.changeMark));
+    splices.push(setAttributeSplice(xml, range, 'reasonForUpdateRefIds', refIds));
+  };
+  /** 既に modify の印を持つ親は、印を保ち、指す理由だけを足す */
+  const refIdsWith = (el: Element): string => {
+    const now = (el.getAttribute('reasonForUpdateRefIds') ?? '').split(/\s+/).filter(Boolean);
+    return ownChange(el) === 'modify' && !now.includes(reasonId)
+      ? [...now, reasonId].join(' ')
+      : reasonId;
+  };
   for (const t of targets) {
+    if (t.keep) {
+      markAttributes(t.range, 'delete', reasonId);
+      continue;
+    }
     const span = removalSpan(xml, t.range);
     splices.push({ pos: span.from, del: span.to - span.from, ins: '' });
+  }
+  for (const [parent, { range }] of parentMarks) {
+    if (ownChange(parent) === 'modify') {
+      splices.push(setAttributeSplice(xml, range, 'reasonForUpdateRefIds', refIdsWith(parent)));
+    } else markAttributes(range, 'modify', reasonId);
+  }
+  // 識別・状態部の reasonForUpdate（印を 1 つでも付けたとき）
+  const marked = changes.some((c) => c.mark);
+  let reasonElement: Element | undefined;
+  let reasonBefore: Element | undefined;
+  const newReason = marking?.reason;
+  if (existingReason) {
+    // 既にある reasonForUpdate を指す。識別・状態部は変えない
+  } else if (marking && newReason && marked && statusElement) {
+    const placed = reasonForUpdateSplice(layout, rootRange, statusElement, {
+      ...newReason,
+      id: reasonId,
+    });
+    if (!placed) {
+      refuse(undefined, 'ranges-unavailable', 'The place for reasonForUpdate was not found.');
+      return fail();
+    }
+    reasonElement = placed.element;
+    reasonBefore = placed.before;
+    splices.push(placed.splice);
+  } else if (marking) {
+    notes.push(
+      'marking: no change markup was added (every edit was inside an element marked add or delete, or removed an element added in this in-work issue), so no reasonForUpdate was added.',
+    );
   }
   for (const ins of insertions) {
     const p = place(layout, ins.refRange, ins.position);
@@ -610,7 +938,7 @@ export function editContent(
   const out = applySplices(xml, splices);
 
   // DOM で同じ操作をして、結果を比べる
-  const isTarget = (n: Node | null) => !!n && targets.some((t) => t.element === n);
+  const isTarget = (n: Node | null) => !!n && targets.some((t) => !t.keep && t.element === n);
   const anchors = insertions.map((ins) => {
     const beside = ins.position === 'before' || ins.position === 'after';
     const parent = (beside ? ins.ref.parentNode : ins.ref) as unknown as Element;
@@ -623,7 +951,24 @@ export function editContent(
     while (before && isTarget(before)) before = before.nextSibling;
     return { parent, before };
   });
-  for (const t of targets) t.element.parentNode?.removeChild(t.element);
+  for (const [parent] of parentMarks) {
+    const refIds = refIdsWith(parent);
+    if (ownChange(parent) !== 'modify') {
+      parent.setAttribute('changeType', 'modify');
+      parent.setAttribute('changeMark', marking!.changeMark);
+    }
+    parent.setAttribute('reasonForUpdateRefIds', refIds);
+  }
+  for (const t of targets) {
+    if (t.keep) {
+      t.element.setAttribute('changeType', 'delete');
+      t.element.setAttribute('changeMark', marking!.changeMark);
+      t.element.setAttribute('reasonForUpdateRefIds', reasonId);
+    } else t.element.parentNode?.removeChild(t.element);
+  }
+  if (reasonElement && statusElement) {
+    statusElement.insertBefore(doc.importNode(reasonElement, true), reasonBefore ?? null);
+  }
   insertions.forEach((ins, i) => {
     const node =
       ins.element.ownerDocument === doc ? ins.element : doc.importNode(ins.element, true);
@@ -648,7 +993,35 @@ export function editContent(
     );
     return fail();
   }
-  return { applied: true, xml: out, refusals, changes, notes };
+  return {
+    applied: true,
+    xml: out,
+    refusals,
+    changes,
+    ...(newReason && reasonElement
+      ? {
+          reasonForUpdate: {
+            id: reasonId,
+            added: true,
+            updateReasonType: newReason.updateReasonType,
+            ...(newReason.updateHighlight !== undefined
+              ? { updateHighlight: newReason.updateHighlight }
+              : {}),
+          },
+        }
+      : existingReason && changes.some((c) => c.mark)
+        ? {
+            reasonForUpdate: {
+              id: reasonId,
+              added: false,
+              ...(existingReason.getAttribute('updateReasonType')
+                ? { updateReasonType: existingReason.getAttribute('updateReasonType')! }
+                : {}),
+            },
+          }
+        : {}),
+    notes,
+  };
 }
 
 /** insert の節点 1 つを、下書きの組み立て役（`Writer`）で要素にする */

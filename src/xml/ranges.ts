@@ -162,3 +162,109 @@ export function rangesMatchDocument(root: ElementRange, documentElement: Element
   };
   return walk(root, documentElement);
 }
+
+// ---- 開始タグの中の属性 ----
+
+/** 開始タグの中の属性 1 つの範囲 */
+export interface AttributeRange {
+  /** 属性名（接頭辞があれば付いたまま） */
+  name: string;
+  /** 属性の前の空白の先頭の位置（属性を取り除くときは、ここから `end` までを取り除く） */
+  start: number;
+  /** 属性名の先頭の位置 */
+  nameStart: number;
+  /** 値の先頭（引用符の次）の位置 */
+  valueStart: number;
+  /** 値の末尾（閉じる引用符）の位置 */
+  valueEnd: number;
+  /** 閉じる引用符の次の位置 */
+  end: number;
+}
+
+/** 要素の開始タグの中の属性を、書かれている順に返す */
+export function scanAttributes(xml: string, range: ElementRange): AttributeRange[] {
+  const out: AttributeRange[] = [];
+  let i = range.start + 1 + range.name.length;
+  const limit = range.openEnd;
+  while (i < limit) {
+    const start = i;
+    while (i < limit && /\s/.test(xml[i]!)) i++;
+    const nameStart = i;
+    while (i < limit && /[^\s=/>]/.test(xml[i]!)) i++;
+    if (i === nameStart) break;
+    const name = xml.slice(nameStart, i);
+    while (i < limit && /\s/.test(xml[i]!)) i++;
+    if (xml[i] !== '=') break;
+    i++;
+    while (i < limit && /\s/.test(xml[i]!)) i++;
+    const quote = xml[i];
+    if (quote !== '"' && quote !== "'") break;
+    const valueStart = i + 1;
+    const valueEnd = xml.indexOf(quote, valueStart);
+    if (valueEnd < 0 || valueEnd >= limit) break;
+    i = valueEnd + 1;
+    out.push({ name, start, nameStart, valueStart, valueEnd, end: i });
+  }
+  return out;
+}
+
+/** 開始タグの末尾（`>` か `/>`）の前で、属性を書き足す位置。末尾の前の空白は残す */
+export function attributeInsertPosition(xml: string, range: ElementRange): number {
+  const attrs = scanAttributes(xml, range);
+  const last = attrs[attrs.length - 1];
+  return last ? last.end : range.start + 1 + range.name.length;
+}
+
+/** 属性の値を、二重引用符で囲む値として書く */
+export function escapeAttributeValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+/** 文字列への操作 1 つ。`pos` から `del` 文字を取り除き、`ins` を入れる */
+export interface TextSplice {
+  pos: number;
+  del: number;
+  ins: string;
+}
+
+/**
+ * 属性 1 つを書く操作を返す。属性があれば値だけを書き換え（引用符の種類に合わせて書く）、無ければ最後の属性の後ろに足す。
+ * 同じ開始タグに続けて足すときは、呼んだ順に並ぶ（操作を位置の順・渡した順に適用する前提）。
+ */
+export function setAttributeSplice(
+  xml: string,
+  range: ElementRange,
+  name: string,
+  value: string,
+): TextSplice {
+  const existing = scanAttributes(xml, range).find((a) => a.name === name);
+  if (existing) {
+    const quote = xml[existing.valueStart - 1];
+    const escaped =
+      quote === "'"
+        ? value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/'/g, '&apos;')
+        : escapeAttributeValue(value);
+    return {
+      pos: existing.valueStart,
+      del: existing.valueEnd - existing.valueStart,
+      ins: escaped,
+    };
+  }
+  return {
+    pos: attributeInsertPosition(xml, range),
+    del: 0,
+    ins: ` ${name}="${escapeAttributeValue(value)}"`,
+  };
+}
+
+/** 属性 1 つを、前の空白ごと取り除く操作を返す。属性が無ければ undefined */
+export function removeAttributeSplice(
+  xml: string,
+  range: ElementRange,
+  name: string,
+): TextSplice | undefined {
+  const existing = scanAttributes(xml, range).find((a) => a.name === name);
+  return existing
+    ? { pos: existing.start, del: existing.end - existing.start, ins: '' }
+    : undefined;
+}

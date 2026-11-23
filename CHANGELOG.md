@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0 (2026-11-24)
+
+Grok Build の試用で見つかった、検証状態の参照の数え方の食い違いを直しました。
+
+### 変更（検証状態の値が変わります）
+
+- **`VerificationStatus.references` は、仕様書（モデル識別コード `S1000D`）への `dmRef` を未解決に数えません。** これまでは、ビジネスルール文書などが仕様書の章や既定 BREX を指す `dmRef` も `unresolvedCount` に入り、ほかに未解決が無くても `state` が `unresolved` になっていました。verify-mcp の `check_references`・`suggest_fixes` はこれらを別に扱っていたため、同じ応答の中で要約（`unresolvedCount: 467`）と詳細（`unresolvedCount: 0`）が食い違っていました。今後は `unresolvedCount` と `state` を仕様書への参照を除いて決め、その件数を新しい `specificationReferences`（1 件以上のときだけ付く）に返します。`verifyDataModule` の `references`（`ReferenceReport`）の中身は変わらず、仕様書への参照も `unresolved` に残ります。
+
+### 追加
+
+- 仕様書への `dmRef` かを判定する `isSpecificationReference` を公開しました。`suggestFixes` も同じ判定を使います。
+
 ## 0.15.0 (2026-11-18)
 
 発行済みのデータモジュールを S1000D の版の決まりに沿って直すための操作を 3 つ足しました（設計は s1000d-stack の `docs/design/core-revision.md`、決定は DECISIONS の D-33）。

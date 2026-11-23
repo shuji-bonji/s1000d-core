@@ -69,9 +69,13 @@ export interface VerificationStatus {
     reason?: string;
   };
   references: {
+    /** `unresolvedCount` が 1 以上なら `unresolved`。仕様書への dmRef だけが見つからないときは `resolved` */
     state: ReferencesState;
     checked: number;
+    /** 参照先が見つからなかった参照の数。仕様書（モデル識別コード `S1000D`）への dmRef は含めない */
     unresolvedCount: number;
+    /** 仕様書（モデル識別コード `S1000D`）への dmRef で、参照先が見つからなかったものの数。1 件以上のときだけ付く */
+    specificationReferences?: number;
     reason?: string;
   };
   /** ISO 8601、実行環境のオフセット付き（例: 2026-10-24T23:50:00+09:00） */

@@ -179,8 +179,13 @@ describe('verifyDataModule: BREX の層を指す参照', () => {
   it('(c) CSDB なしで仕様書の章を指す dmRef の提案は、CSDB を渡す案内ではなく仕様書への参照の注記', async () => {
     const xml = withSpecRef();
     const v = await verifyDataModule(xml, { brex: { resolver }, references: {} });
-    // brexDmRef は解決され、仕様書の章への dmRef だけが残る
-    expect(v.status.references).toEqual({ state: 'unresolved', checked: 2, unresolvedCount: 1 });
+    // brexDmRef は解決され、仕様書の章への dmRef だけが残る。状態では未解決に数えず、specificationReferences に数える
+    expect(v.status.references).toEqual({
+      state: 'resolved',
+      checked: 2,
+      unresolvedCount: 0,
+      specificationReferences: 1,
+    });
     expect(v.references?.unresolved[0].reason).toBe('no-csdb');
     const fixes = suggestFixes(v, { xml });
     expect(fixes).toHaveLength(1);

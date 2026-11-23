@@ -13,7 +13,7 @@ import type { CsdbIndex, CsdbObject } from '../csdb-index.js';
 import { formatDmc } from '../dmc.js';
 import { formatPmc } from '../pmc.js';
 import type { CollectedReferences } from '../refs/collect.js';
-import type { ReferenceReport } from '../refs/resolve.js';
+import { isSpecificationReference, type ReferenceReport } from '../refs/resolve.js';
 import type { DmCode, IssueInfo } from '../types.js';
 import { nearMatches } from './similar.js';
 import { confidenceOf, type Fix, type FixCandidate } from './types.js';
@@ -83,7 +83,7 @@ export function suggestReferenceFixes(
     const base = { location: r.location, problem: u.message };
     // モデル識別コード S1000D の dmRef は仕様書の章への参照で、CSDB の有無にかかわらず CSDB には無い。
     // CSDB を渡していなくても「CSDB を渡せ」とは言わない
-    if (r.kind === 'dmRef' && r.ref.dmCode.modelIdentCode.toUpperCase() === 'S1000D') {
+    if (isSpecificationReference(r)) {
       add({
         ...base,
         candidates: [],

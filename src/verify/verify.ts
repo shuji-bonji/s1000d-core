@@ -19,7 +19,12 @@ import type { BrexCheckReport, BrexDocument } from '../brex/types.js';
 import { CsdbIndex } from '../csdb-index.js';
 import type { CsdbSource } from '../csdb-source.js';
 import { collectReferences } from '../refs/collect.js';
-import { resolveReferences, type KnownObject, type ReferenceReport } from '../refs/resolve.js';
+import {
+  isSpecificationReference,
+  resolveReferences,
+  type KnownObject,
+  type ReferenceReport,
+} from '../refs/resolve.js';
 import { findSchemaDirs, locateXsd, type LocateXsdResult, type SchemaDir } from './schemas.js';
 import type { VerificationStatus } from './types.js';
 
@@ -237,10 +242,16 @@ export async function verifyDataModule(
       csdb,
       knownObjects,
     });
+    // 仕様書（モデル識別コード S1000D）への dmRef は CSDB に無いのが通常なので、未解決の数には入れず別に数える
+    const specification = refReport.unresolved.filter((u) =>
+      isSpecificationReference(u.reference),
+    ).length;
+    const unresolvedCount = refReport.unresolved.length - specification;
     status.references = {
-      state: refReport.unresolved.length > 0 ? 'unresolved' : 'resolved',
+      state: unresolvedCount > 0 ? 'unresolved' : 'resolved',
       checked: refReport.checked,
-      unresolvedCount: refReport.unresolved.length,
+      unresolvedCount,
+      ...(specification > 0 ? { specificationReferences: specification } : {}),
     };
   } else {
     status.references.reason = 'skipped';

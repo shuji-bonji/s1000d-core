@@ -12,6 +12,7 @@ export {
   type ReferenceKind,
 } from './collect.js';
 export {
+  isSpecificationReference,
   resolveReferences,
   type KnownObject,
   type ReferenceReport,

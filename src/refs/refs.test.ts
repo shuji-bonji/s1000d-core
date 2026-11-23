@@ -235,4 +235,43 @@ describe('collectReferences / resolveReferences', () => {
     expect(ok.status.references.checked).toBe(2);
     expect(ok.status.references.state).toBe('unresolved');
   });
+
+  /** 仕様書（モデル識別コード S1000D）の章を指す dmRef */
+  const SPEC_DM_REF = `<dmRef><dmRefIdent>
+          <dmCode modelIdentCode="S1000D" systemDiffCode="A" systemCode="00" subSystemCode="6" subSubSystemCode="0" assyCode="0000" disassyCode="00" disassyCodeVariant="B" infoCode="024" infoCodeVariant="B" itemLocationCode="D"/>
+        </dmRefIdent></dmRef>`;
+
+  it('仕様書への dmRef は unresolvedCount に入れず specificationReferences に数える', async () => {
+    const withSpec = DM_WITH_REFS.replace(
+      '<para>段落 <internalRef',
+      `<para>仕様書 ${SPEC_DM_REF} と ${SPEC_DM_REF}。</para>\n        <para>段落 <internalRef`,
+    );
+    const r = await verifyDataModule(withSpec, { references: { csdb: [csdbDir] } });
+    // 仕様書への 2 件は詳細（references.unresolved）には残るが、状態の数からは外れる
+    expect(r.references?.unresolved).toHaveLength(5 + 2);
+    expect(r.status.references).toEqual({
+      state: 'unresolved',
+      checked: 14 + 2,
+      unresolvedCount: 5,
+      specificationReferences: 2,
+    });
+  });
+
+  it('未解決が仕様書への dmRef だけなら state は resolved', async () => {
+    // 本文を仕様書への dmRef 1 件だけにし、識別・状態部の参照（ACT・BREX）も外す
+    const onlySpec = DM_WITH_REFS.replace(
+      /<content>[\s\S]*<\/content>/,
+      `<content><description><levelledPara><title>仕様書</title><para>${SPEC_DM_REF}</para></levelledPara></description></content>`,
+    )
+      .replace(/<brexDmRef>[\s\S]*<\/brexDmRef>/, '')
+      .replace(/<applicCrossRefTableRef>[\s\S]*<\/applicCrossRefTableRef>/, '');
+    const r = await verifyDataModule(onlySpec, { references: { csdb: [csdbDir] } });
+    expect(r.references?.unresolved).toHaveLength(1);
+    expect(r.status.references).toEqual({
+      state: 'resolved',
+      checked: 1,
+      unresolvedCount: 0,
+      specificationReferences: 1,
+    });
+  });
 });

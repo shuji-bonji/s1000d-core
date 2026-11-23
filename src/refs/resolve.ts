@@ -44,6 +44,15 @@ export interface ResolvedReference {
   externalApplic?: string;
 }
 
+/**
+ * 仕様書そのもの（モデル識別コード `S1000D`）を指す dmRef か。
+ * ビジネスルール文書などが仕様書の章や既定 BREX を指すもので、プロジェクトの CSDB には無いのが通常。
+ * 未解決の参照には入るが、検証状態の `unresolvedCount` からは除き、`specificationReferences` として数える。
+ */
+export function isSpecificationReference(r: Reference): boolean {
+  return r.kind === 'dmRef' && r.ref.dmCode.modelIdentCode.toUpperCase() === 'S1000D';
+}
+
 export interface UnresolvedReference {
   reference: Reference;
   target: string;

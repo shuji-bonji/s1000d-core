@@ -3,7 +3,7 @@
  *
  * 例: `PMC-S1000DBIKE-B6865-EPWG1-00_006-00_EN-US.XML`
  *     → modelIdentCode S1000DBIKE、pmIssuer B6865、pmNumber EPWG1、pmVolume 00、発行 006-00、言語 en-US
- * 要素は `pmCode` の属性名（modelIdentCode / pmIssuer / pmNumber / pmVolume）に合わせる（Chap 4.3.4）。
+ * 要素は `pmCode` の属性名（modelIdentCode / pmIssuer / pmNumber / pmVolume）に合わせる（Chap 4.9.2）。
  */
 import type { IssueInfo, Language, ParseResult, PmCode, PmcFileName } from './types.js';
 

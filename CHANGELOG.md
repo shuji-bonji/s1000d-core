@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.0 (2026-11-24)
+
+### 追加
+
+- **`reconcileDml` の `notListed` の行に、そのファイルの版（`issueInfo`）を足しました。** これまでは `path`・`fileName`・`target` だけで、版はファイル名から読むしかありませんでした（Grok Build の試用の所見 F-11。hub の `eval/hosts/grok-build/reports/2026-11/FINDINGS.md`）。CSDB の索引が版を持たないオブジェクトには付きません。これまでの項目は変わりません。
+
+### 修正
+
+- `pmc.ts` の冒頭のコメントが、PMC の決まりの出典を Chap 4.3.4 と書いていたのを、Chap 4.9.2 に直しました（Issue 7）。動きは変わりません。
+
 ## 0.17.0 (2026-11-24)
 
 ### 追加

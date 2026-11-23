@@ -33,6 +33,8 @@ export interface NotListedObject {
   fileName: string;
   /** DMC または PMC */
   target: string;
+  /** そのファイルの版（CSDB の索引が持つ値）。索引が版を持たないときは付かない */
+  issueInfo?: IssueInfo;
 }
 
 export interface DmlReconciliation {
@@ -196,6 +198,7 @@ export function reconcileDml(
           path: o.path,
           fileName: o.fileName,
           target: formatDmc(o.dm.dmCode),
+          ...(o.dm.issueInfo ? { issueInfo: o.dm.issueInfo } : {}),
         });
       } else if (o.kind === 'pm' && o.pm) {
         if (!mics.has(o.pm.pmCode.modelIdentCode)) continue;
@@ -205,6 +208,7 @@ export function reconcileDml(
           path: o.path,
           fileName: o.fileName,
           target: formatPmc(o.pm.pmCode),
+          ...(o.pm.issueInfo ? { issueInfo: o.pm.issueInfo } : {}),
         });
       }
     }

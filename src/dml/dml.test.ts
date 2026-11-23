@@ -219,6 +219,12 @@ describe('reconcileDml', () => {
       'KENBAIKI-A-10-20-00-00A-520A-A',
       'KENBAIKI-K0001-OPM02-00',
     ]);
+    // 載っていない行にも、そのファイルの版が付く（Grok Build の所見 F-11）
+    for (const o of r.notListed)
+      expect(o.issueInfo).toMatchObject({
+        issueNumber: expect.any(String),
+        inWork: expect.any(String),
+      });
   });
   it('includeNotListed: false と modelIdentCodes', () => {
     const dml = readDml(DML);

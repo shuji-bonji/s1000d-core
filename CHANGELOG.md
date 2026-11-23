@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.17.0 (2026-11-24)
+
+### 追加
+
+- **このパッケージの名前と版を返す `CORE_INFO`（`{ name, version }`）を公開しました。** `package.json` の `name`・`version` を、実行時に読んで返します。MCP が応答の `_server.core` に、実際に読み込まれている core の版を載せるために使います（hub の DECISIONS の D-38、Issue [shuji-bonji/s1000d-stack#12](https://github.com/shuji-bonji/s1000d-stack/issues/12)）。
+
 ## 0.16.0 (2026-11-24)
 
 Grok Build の試用で見つかった、検証状態の参照の数え方の食い違いを直しました。

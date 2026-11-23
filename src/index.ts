@@ -7,6 +7,7 @@
  * S1000D® は ASD の登録商標です。このライブラリは ASD とは無関係で、仕様書・スキーマ・公式サンプルを含みません。
  */
 export * from './types.js';
+export { CORE_INFO } from './info.js';
 export {
   BREX_INFO_CODE,
   formatDmc,

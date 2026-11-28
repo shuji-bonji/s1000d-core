@@ -26,6 +26,12 @@ export function buildContent(
   ctx: BuildContentContext = {},
 ): Element {
   const w = new Writer(kind, ctx, body);
+  const content = buildByKind(w, kind, body);
+  w.assertAuthorityWritten();
+  return content;
+}
+
+function buildByKind(w: Writer, kind: DraftKind, body: DraftNode[]): Element {
   switch (kind) {
     case 'descript':
       return buildDescript(w, body);

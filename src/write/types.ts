@@ -132,6 +132,14 @@ export interface DraftNode {
   kind: DraftNodeKind;
   /** 要素の `id`。fault の step、process の dialog・if では必須（手順の行き先と変数名に使う） */
   id?: string;
+  /**
+   * 管理された内容の印（S1000D Issue 4.0〜4.2 の `authorityName`・`authorityDocument`）。この節点とその子の内容を、
+   * 書いた組織とは別の組織（データを受け取る側など）が管理していることを示す。`name` は管理する組織の名前（必須）、
+   * `document` は管理を求める根拠の文書（任意）。値は解釈しない。
+   * 対象の版が Issue 4.2 より後のとき（既定の Issue 7 を含む）と、その版でこの印を付けられない要素になる節点では、
+   * DraftInputError（黙って落とさない）
+   */
+  authority?: { name: string; document?: string };
   /** 見出し。definition では用語、table・figure では表題、process の if では使わない */
   title?: string;
   /** この節点自身の文（子の段落や手順は含まない）。参照は text に埋め込まず refs に書く。`<` と `&` はそのまま書く */

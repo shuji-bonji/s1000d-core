@@ -1239,3 +1239,92 @@ describe('buildDataModule: その版に置けないものは、組み立てず�
     expect(pathOf(() => build('4.1', { brexDmRef: defaultBrex }))).toBeUndefined();
   });
 });
+
+describe('管理された内容の印（authority → authorityName・authorityDocument。Issue 4.0〜4.2）', () => {
+  const xmlOf = (
+    kind: DraftDataModule['kind'],
+    body: DraftNode[],
+    issue: string | undefined,
+  ): string => new XMLSerializer().serializeToString(buildContent(kind, body, { issue }));
+  const pathOf = (f: () => unknown): string | undefined => {
+    try {
+      f();
+      return undefined;
+    } catch (e) {
+      expect(e).toBeInstanceOf(DraftInputError);
+      return (e as DraftInputError).path;
+    }
+  };
+  const step = (over: Partial<DraftNode> = {}): DraftNode => ({
+    kind: 'step',
+    text: '受け取った側が足した手順。',
+    authority: { name: 'xyz', document: 'xyz-prod-1' },
+    ...over,
+  });
+
+  it('Issue 4.0・4.1・4.2 では、要素に authorityName・authorityDocument を書き、読み戻せる', () => {
+    for (const issue of ['4.0', '4.1', '4.2']) {
+      const xml = xmlOf('proced', [{ kind: 'step', text: '元の手順。' }, step()], issue);
+      expect(xml).toContain('<proceduralStep authorityName="xyz" authorityDocument="xyz-prod-1">');
+      const read = readContentFromXml(
+        `<dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_${issue.replace('.', '-')}/xml_schema_flat/proced.xsd">${xml}</dmodule>`,
+      );
+      const steps = read.blocks.filter((n) => n.kind === 'step');
+      expect(steps.map((n) => n.authority)).toEqual([
+        undefined,
+        { name: 'xyz', document: 'xyz-prod-1' },
+      ]);
+      // その他の属性（attrs）には重ねて入れない
+      expect(JSON.stringify(steps[1]!.attrs ?? {})).not.toContain('authority');
+    }
+  });
+  it('document は省ける。name が無ければ入力の誤り', () => {
+    const xml = xmlOf('proced', [step({ authority: { name: 'xyz' } })], '4.2');
+    expect(xml).toContain('<proceduralStep authorityName="xyz">');
+    expect(pathOf(() => xmlOf('proced', [step({ authority: { name: '' } })], '4.2'))).toBe(
+      '/body[1]/authority/name',
+    );
+  });
+  it('Issue 4.2 より後の版（既定の Issue 7 を含む）では、組み立てずに入力の誤り', () => {
+    for (const issue of [undefined, '7', '6', '5.0']) {
+      expect(pathOf(() => xmlOf('proced', [step()], issue))).toBe('/body[1]/authority');
+    }
+  });
+  it('印を付けられない要素になる節点では、黙って落とさずに入力の誤り', () => {
+    // para は authorityName を持てない
+    expect(
+      pathOf(() =>
+        xmlOf('descript', [{ kind: 'para', text: '本文。', authority: { name: 'xyz' } }], '4.2'),
+      ),
+    ).toMatch(/\/authority$/);
+    // 節（levelledPara）には付けられる
+    expect(
+      xmlOf(
+        'descript',
+        [
+          {
+            kind: 'section',
+            title: '概要',
+            authority: { name: 'xyz' },
+            children: [{ kind: 'para', text: '本文。' }],
+          },
+        ],
+        '4.0',
+      ),
+    ).toContain('<levelledPara authorityName="xyz">');
+  });
+  it('pm の項目（pmEntry）は Issue 4.1 から。Issue 4.0 では入力の誤り', () => {
+    const body: DraftNode[] = [
+      {
+        kind: 'section',
+        title: '概要',
+        authority: { name: 'xyz' },
+        children: [
+          { kind: 'entry', refs: [{ kind: 'dmRef', target: 'KENBAIKI-A-10-20-00-00A-040A-D' }] },
+        ],
+      },
+    ];
+    expect(xmlOf('pm', body, '4.1')).toContain('<pmEntry authorityName="xyz">');
+    expect(pathOf(() => xmlOf('pm', body, '4.0'))).toBe('/body[1]/authority');
+  });
+});

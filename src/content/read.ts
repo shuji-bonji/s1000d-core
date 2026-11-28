@@ -281,9 +281,18 @@ function changeOf(el: Element): ChangeAttributes | undefined {
 }
 
 /** 節点に、要素自身の変更の印を写す */
+/** 要素自身の変更の印と、管理された内容の印（`authorityName`・`authorityDocument`）を節点に写す */
 function withChange(node: ContentNode, el: Element): ContentNode {
   const change = changeOf(el);
   if (change) node.change = change;
+  const name = attr(el, 'authorityName');
+  const document = attr(el, 'authorityDocument');
+  if (name !== undefined || document !== undefined) {
+    node.authority = {
+      ...(name !== undefined ? { name } : {}),
+      ...(document !== undefined ? { document } : {}),
+    };
+  }
   return node;
 }
 
@@ -893,7 +902,14 @@ class Reader {
 
   /** 節点に写した属性（`id`・`applicRefId`・`securityClassification` と変更の印の 3 つ）を除いた、書かれている属性 */
   private restAttrs(el: Element): Record<string, string> | undefined {
-    const a = allAttrs(el, ['id', 'applicRefId', 'securityClassification', ...CHANGE_ATTRS]);
+    const a = allAttrs(el, [
+      'id',
+      'applicRefId',
+      'securityClassification',
+      'authorityName',
+      'authorityDocument',
+      ...CHANGE_ATTRS,
+    ]);
     return Object.keys(a).length > 0 ? a : undefined;
   }
 

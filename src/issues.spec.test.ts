@@ -195,6 +195,21 @@ function withoutSectionTitles(draft: DraftDataModule): DraftDataModule {
   return { ...draft, body: draft.body.map(strip) };
 }
 
+/** 最初に見つかった、その種類の節点に、管理された内容の印を付けた下書き */
+function withAuthority(draft: DraftDataModule, kind: DraftNode['kind']): DraftDataModule {
+  let done = false;
+  const mark = (n: DraftNode): DraftNode => {
+    if (!done && n.kind === kind) {
+      done = true;
+      return { ...n, authority: { name: 'xyz', document: 'xyz-prod-1' } };
+    }
+    return n.children ? { ...n, children: n.children.map(mark) } : n;
+  };
+  const body = draft.body.map(mark);
+  if (!done) throw new Error(`no "${kind}" node in the draft`);
+  return { ...draft, body };
+}
+
 /**
  * 作る側。自作の下書き 6 件を、版を指定して組み立て、その版の配布物の XSD にかける。
  * その版に置けないと分かっているものは、組み立てずに入力の誤りにする（s1000d-stack の DECISIONS D-43）。
@@ -222,6 +237,10 @@ describe.skipIf(!enabled)('版を指定して組み立てた XML を、その版
           ['processWithoutSectionTitles', withoutSectionTitles(F.processDraft())],
           ['fault', F.faultDraft()],
           ['pm', F.pmDraft()],
+          // 管理された内容の印（authorityName・authorityDocument）。Issue 4.0〜4.2 の XSD にある
+          ['descriptWithAuthority', withAuthority(F.descriptDraft(), 'section')],
+          ['procedWithAuthority', withAuthority(F.procedDraft(), 'step')],
+          ['faultWithAuthority', withAuthority(F.faultDraft(), 'step')],
         ];
         const refused: Record<string, string> = {};
         const invalid: Record<string, string[]> = {};

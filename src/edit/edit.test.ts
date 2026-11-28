@@ -378,3 +378,31 @@ describe('editContent: 先頭に BOM がある XML', () => {
     expect(withBom.xml).toBe(`\uFEFF${plain.xml}`);
   });
 });
+
+describe('insert の節点の、管理された内容の印（authority）', () => {
+  const insertStep = (xml: string, kind: 'step' | 'para' = 'step') =>
+    editContent(xml, [
+      {
+        op: 'insert',
+        to: kind === 'step' ? `${STEP}[1]` : `${STEP}[3]/para`,
+        position: 'after',
+        node: { kind, text: '受け取った側が足した内容。', authority: { name: 'xyz' } },
+      },
+    ]);
+
+  it('文書が Issue 4.2 なら、authorityName を書く（版は文書の xsi:noNamespaceSchemaLocation から読む）', () => {
+    const r = insertStep(dm().replace('S1000D_7/', 'S1000D_4-2/'));
+    expect(r.refusals).toEqual([]);
+    expect(r.xml).toContain('<proceduralStep authorityName="xyz">');
+  });
+  it('文書が Issue 7 なら、書かずに断る', () => {
+    const r = insertStep(dm());
+    expect(r.applied).toBe(false);
+    expect(r.refusals[0]!.message).toContain('/edits[1]/node/authority');
+  });
+  it('authorityName を持てない要素（para）になる節点も、書かずに断る', () => {
+    const r = insertStep(dm().replace('S1000D_7/', 'S1000D_4-2/'), 'para');
+    expect(r.applied).toBe(false);
+    expect(r.refusals[0]!.message).toContain('/edits[1]/node/authority');
+  });
+});

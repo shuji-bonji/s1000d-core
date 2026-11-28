@@ -17,6 +17,7 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import { describeLocation } from '../brex/check.js';
 import type { NodeLocation } from '../brex/types.js';
 import { ALLOWED, Writer, newDocument } from '../write/content/common.js';
+import { parseSchemaLocation } from '../schema-location.js';
 import { DraftInputError } from '../write/errors.js';
 import type { DraftKind, DraftNode, DraftNodeKind } from '../write/types.js';
 import type { Document, Element, Node, XmlEngine } from '../xml/engine.js';
@@ -490,6 +491,10 @@ export function editContent(
     return nodes[0];
   };
 
+  // 文書の版（xsi:noNamespaceSchemaLocation の S1000D_x-y）。insert の節点を、その版に置けるかどうかの判断に使う
+  const documentIssue = parseSchemaLocation(
+    doc.documentElement!.getAttribute('xsi:noNamespaceSchemaLocation'),
+  ).issue;
   const documentIds = new Set<string>();
   for (const el of descendantsAndSelf(doc.documentElement!)) {
     const id = el.getAttribute('id');
@@ -724,7 +729,15 @@ export function editContent(
         }
         const path = `/edits[${index + 1}]/node`;
         try {
-          element = buildNode(contentKind, draftParent, edit.node, path, documentIds, options);
+          element = buildNode(
+            contentKind,
+            draftParent,
+            edit.node,
+            path,
+            documentIds,
+            options,
+            documentIssue,
+          );
         } catch (e) {
           if (!(e instanceof DraftInputError)) throw e;
           refuse(index, 'draft-input-error', e.message, { location: refLocation });
@@ -1032,11 +1045,23 @@ function buildNode(
   path: string,
   documentIds: Set<string>,
   options: EditContentOptions,
+  issue: string | undefined,
 ): Element {
-  const w = new Writer(kind, { ...options.build, document: newDocument(), notes: [] }, [node]);
+  const w = new Writer(
+    kind,
+    { ...options.build, document: newDocument(), notes: [], ...(issue ? { issue } : {}) },
+    [node],
+  );
   // 文書に既にある id への internalRef を受け付ける
   for (const id of documentIds) w.ids.add(id);
   w.checkKind(node, parent, path);
+  const element = buildInsertedNode(w, node, path);
+  // 管理された内容の印（authority）を書けない種類の節点なら、ここで位置付きで投げる
+  w.assertAuthorityWritten();
+  return element;
+}
+
+function buildInsertedNode(w: Writer, node: DraftNode, path: string): Element {
   switch (node.kind) {
     case 'step':
       return w.proceduralStep(node, path);

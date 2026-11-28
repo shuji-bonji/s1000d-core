@@ -76,6 +76,14 @@ export interface ChangeMark extends ChangeAttributes {
   column?: number;
 }
 
+/** 管理された内容の印（Issue 4.0〜4.2 の `authorityName`・`authorityDocument`）。書かれているものだけを持つ */
+export interface ContentAuthority {
+  /** `@authorityName`。内容を管理する組織の名前 */
+  name?: string;
+  /** `@authorityDocument`。管理を求める根拠の文書 */
+  document?: string;
+}
+
 export interface ContentRef {
   kind: 'dmRef' | 'pmRef' | 'internalRef' | 'externalPubRef' | 'graphic' | 'multimedia';
   /** DMC・PMC・id・実体名・外部文書の識別 */
@@ -179,6 +187,11 @@ export interface ContentNode {
   refs?: ContentRef[];
   /** 要素自身の変更の印（`changeType`・`changeMark`・`reasonForUpdateRefIds`）。値は解釈しない */
   change?: ChangeAttributes;
+  /**
+   * 管理された内容の印（`authorityName`・`authorityDocument`。Issue 4.0〜4.2）。この要素とその子の内容を、
+   * 書いた組織とは別の組織（データを受け取る側など）が管理していることを示す。値は解釈しない
+   */
+  authority?: ContentAuthority;
   /** その他の属性（process の variableName、式を文にした expression など） */
   attrs?: Record<string, string>;
   children: ContentNode[];

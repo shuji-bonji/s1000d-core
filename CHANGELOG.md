@@ -2,7 +2,17 @@
 
 ## 0.20.0 (2026-11-29)
 
-S1000D Issue 4.0 系で作れるものを広げました（s1000d-stack の DECISIONS の D-43。[shuji-bonji/s1000d-stack#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。
+S1000D Issue 4.0〜4.2 で作れるものを広げました（s1000d-stack の DECISIONS の D-43。[shuji-bonji/s1000d-stack#26](https://github.com/shuji-bonji/s1000d-stack/issues/26)・[#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。
+
+### 追加
+
+- **管理された内容の印（`authorityName`・`authorityDocument`）を、Issue 4.0・4.1・4.2 向けに書けるようにしました**（[shuji-bonji/s1000d-stack#26](https://github.com/shuji-bonji/s1000d-stack/issues/26)）。データを受け取った組織が足した内容のように、書いた組織とは別の組織が管理する内容に付ける属性です。Issue 7 の XSD には無く、`controlAuthority` に置き換わっています。
+  - 下書きの節点（`DraftNode`）に `authority: { name, document? }` を足しました。`name` が `authorityName`、`document` が `authorityDocument` になります。`schema/draft.schema.json` にも足しました。
+  - 書けるのは、その版の XSD で `authorityName` を持つ要素になる節点です（節の `levelledPara`、手順の `proceduralStep`、故障探求の手順、表、図、定義リストの項目、参照など）。要素の名前と、付けられるようになった版の対応は `AUTHORITY_ELEMENTS`（`src/write/content/authority-elements.ts`。Issue 4.0・4.1・4.2 の XSD から取り出した 79 個）にあります。`pmEntry` は Issue 4.1 からです。
+  - **書けないときは、組み立てずに `DraftInputError`（位置は `…/authority`）にします。** 対象の版が Issue 4.2 より後のとき（`issue` を省いたときの Issue 7 を含む）と、その版で `authorityName` を持てない要素になる節点（`para` など）のときです。属性を書かずに組み立てることはしません。
+  - `editContent` の insert の節点でも同じです。対象の版は、編集する文書の `xsi:noNamespaceSchemaLocation` から読みます。書けないときは、`refusals` に `draft-input-error` で返し、文書は変えません。
+  - Issue 7 の `controlAuthority` は書きません（未対応）。
+- **読み取りの結果の節点（`ContentNode`）に、`authority: { name?, document? }` を足しました。** `authorityName`・`authorityDocument` のどちらかが書かれている要素に付きます。これまで `attrs` に入っていた節点（`attrs` を返す種類）では、`attrs` からは外れ、`authority` に入ります。
 
 ### 変更
 
@@ -18,6 +28,7 @@ S1000D Issue 4.0 系で作れるものを広げました（s1000d-stack の DECI
 ### テスト
 
 - 配布物付きのテスト（`src/issues.spec.test.ts`）で、Issue 4.0 の PM とコメントを組み立て、Issue 4.0 の XSD で `valid` になることを確かめます。Issue 4.0 で入力の誤りになるのは、プロセス DM の節の題名だけです。
+- 同じテストで、`authority` を付けた下書き（説明の節、手順、故障探求の手順）を Issue 4.0・4.1・4.2 向けに組み立て、それぞれの版の XSD で `valid` になることを確かめます。
 
 ## 0.19.0 (2026-11-28)
 

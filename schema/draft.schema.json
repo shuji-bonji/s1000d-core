@@ -348,6 +348,23 @@
           "type": "string",
           "description": "要素の id。fault の step、process の dialog・if では必須"
         },
+        "authority": {
+          "type": "object",
+          "description": "管理された内容の印（S1000D Issue 4.0〜4.2 の authorityName・authorityDocument）。この節点とその子の内容を、書いた組織とは別の組織が管理していることを示す。対象の版が Issue 4.2 より後のとき（既定の Issue 7 を含む）と、印を付けられない要素になる節点では入力の誤り",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "内容を管理する組織の名前（authorityName）"
+            },
+            "document": {
+              "type": "string",
+              "description": "管理を求める根拠の文書（authorityDocument）"
+            }
+          },
+          "required": ["name"],
+          "additionalProperties": false
+        },
         "title": {
           "type": "string",
           "description": "見出し。definition では用語、table・figure では表題"

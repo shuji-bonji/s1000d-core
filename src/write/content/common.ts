@@ -9,6 +9,8 @@
  *   警告・注意は入力の順にかかわらず先頭へ寄せる（XSD が先頭に置くことを要求するため）
  * - `text` の `<`・`&` は XML の直列化で実体参照になる（このファイルでは文字列をそのまま text 節点にする）
  */
+import { DEFAULT_BUILD_ISSUE, compareIssues } from '../../schema-location.js';
+import { AUTHORITY_ELEMENTS, AUTHORITY_LAST_ISSUE } from './authority-elements.js';
 import { DOMImplementation } from '@xmldom/xmldom';
 import { parseDmc } from '../../dmc.js';
 import { parseIcn } from '../../icn.js';
@@ -151,7 +153,13 @@ const FIELDS: Record<DraftNodeKind, readonly (keyof DraftNode)[]> = {
 /** NATO 物品番号（NSN）: 数字 13 桁。4-2-3-4 桁の間にハイフンを書ける */
 const NSN = /^(\d{4})-?(\d{2})-?(\d{3})-?(\d{4})$/;
 
-const COMMON_FIELDS = new Set<string>(['kind', 'id', 'applicRefId', 'securityClassification']);
+const COMMON_FIELDS = new Set<string>([
+  'kind',
+  'id',
+  'applicRefId',
+  'securityClassification',
+  'authority',
+]);
 
 /** 複数形の説明用 */
 const list = (xs: readonly string[]) => xs.map((x) => `"${x}"`).join(', ');
@@ -164,6 +172,11 @@ export class Writer {
   readonly ids = new Set<string>();
   /** process の変数（名前 → valueType） */
   readonly variables = new Map<string, 'string' | 'boolean'>();
+  /**
+   * 管理された内容の印（`authority`）を持つ節点のうち、まだ要素に書いていないもの（節点 → 入力の位置）。
+   * `common` が要素に書いたときに外す。組み立ての最後に残っていれば、印を書けない種類の節点だったことになる
+   */
+  readonly pendingAuthority = new Map<DraftNode, string>();
 
   constructor(
     readonly dmKind: DraftKind,
@@ -204,7 +217,38 @@ export class Writer {
     if (node.securityClassification !== undefined) {
       e.setAttribute('securityClassification', node.securityClassification);
     }
+    if (node.authority !== undefined) this.applyAuthority(e, node);
     return e;
+  }
+
+  /** 管理された内容の印を要素に書く。その版でこの要素に付けられなければ、位置付きで投げる */
+  private applyAuthority(e: Element, node: DraftNode): void {
+    const path = this.pendingAuthority.get(node) ?? '';
+    const issue = this.ctx.issue ?? DEFAULT_BUILD_ISSUE;
+    const since = AUTHORITY_ELEMENTS[e.nodeName];
+    if (since === undefined || compareIssues(issue, since) < 0) {
+      throw new DraftInputError(
+        `${path}/authority`,
+        `a "${node.kind}" node becomes the element ${e.nodeName}, which cannot carry authorityName in S1000D Issue ${issue}` +
+          (since !== undefined ? ` (it can from Issue ${since})` : '') +
+          '. Put authority on an enclosing node that can carry it (for example a section, a step, a list, a table or a figure).',
+      );
+    }
+    e.setAttribute('authorityName', node.authority!.name);
+    if (node.authority!.document !== undefined) {
+      e.setAttribute('authorityDocument', node.authority!.document);
+    }
+    this.pendingAuthority.delete(node);
+  }
+
+  /** 組み立ての最後に呼ぶ。印を書けなかった節点が残っていれば、位置付きで投げる */
+  assertAuthorityWritten(): void {
+    for (const [node, path] of this.pendingAuthority) {
+      throw new DraftInputError(
+        `${path}/authority`,
+        `a "${node.kind}" node cannot carry authority here: the element it becomes has no authorityName. Put authority on an enclosing node that can carry it (for example a section, a step, a list, a table or a figure).`,
+      );
+    }
   }
 
   // ---- 検査 ----
@@ -214,6 +258,30 @@ export class Writer {
     const allowed = FIELDS[node.kind];
     if (!allowed) {
       throw new DraftInputError(path, `unknown node kind "${String(node.kind)}"`);
+    }
+    if (node.authority !== undefined) {
+      // 管理された内容の印は、Issue 4.0〜4.2 の属性。それより後の版（既定の Issue 7 を含む）の XSD には無い
+      const issue = this.ctx.issue ?? DEFAULT_BUILD_ISSUE;
+      if (compareIssues(issue, AUTHORITY_LAST_ISSUE) > 0) {
+        throw new DraftInputError(
+          `${path}/authority`,
+          `authority (authorityName / authorityDocument) can be written only for S1000D Issue 4.0 to ${AUTHORITY_LAST_ISSUE}; the target is Issue ${issue}, where these attributes do not exist (later issues mark controlled content differently, which this builder does not write yet).`,
+        );
+      }
+      const a = node.authority as { name?: unknown; document?: unknown };
+      if (typeof a !== 'object' || a === null || typeof a.name !== 'string' || a.name === '') {
+        throw new DraftInputError(
+          `${path}/authority/name`,
+          'authority needs name (the organization that controls the content)',
+        );
+      }
+      if (a.document !== undefined && typeof a.document !== 'string') {
+        throw new DraftInputError(
+          `${path}/authority/document`,
+          'authority.document must be a string',
+        );
+      }
+      this.pendingAuthority.set(node, path);
     }
     for (const [k, v] of Object.entries(node)) {
       if (v === undefined || COMMON_FIELDS.has(k)) continue;

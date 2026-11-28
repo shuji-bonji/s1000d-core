@@ -9,7 +9,7 @@ export {
   type XmlEngine,
   type XmlParseIssue,
 } from './engine.js';
-export { XmldomFontoxpathEngine, defaultXmlEngine } from './xmldom-fontoxpath.js';
+export { XmldomFontoxpathEngine, defaultXmlEngine, stripBom } from './xmldom-fontoxpath.js';
 export {
   attributeInsertPosition,
   escapeAttributeValue,

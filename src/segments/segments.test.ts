@@ -467,3 +467,20 @@ describe.skipIf(!enabled || !existsSync(specDir))('S1000D 配布物（Bike Sampl
     expect(validBefore).toBeGreaterThan(50);
   }, 120000);
 });
+
+describe('先頭に BOM がある XML', () => {
+  it('抜き出す文と骨組みのハッシュは、BOM の無い XML のときと同じ。差し戻しもできる', () => {
+    for (const xml of [kenbaiki, PROCED, DESCRIPT]) {
+      const plain = extractSegments(xml);
+      const withBom = extractSegments(`\uFEFF${xml}`);
+      expect(withBom.segments).toEqual(plain.segments);
+      expect(withBom.skeletonHash).toBe(plain.skeletonHash);
+      const back = applySegments(`\uFEFF${xml}`, withBom.segments, {
+        language: ja,
+        skeletonHash: withBom.skeletonHash,
+      });
+      expect(back.unapplied).toEqual([]);
+      expect(normalize(back.xml.replace(/^\uFEFF/, ''))).toBe(normalize(xml));
+    }
+  });
+});

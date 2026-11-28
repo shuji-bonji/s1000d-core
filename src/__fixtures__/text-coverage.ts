@@ -8,6 +8,8 @@
  *
  * 本文の先頭の `referencedApplicGroup`（適用性の文）は、`readContentFromXml` ではなく `readApplicStatements` が読む。
  * 節点は `applicRefId` で指すだけなので、こちらの結果も「読み取りの結果」に含めて数える。
+ *
+ * 内容部の先頭の参照の一覧（`content/refs`）は、`readContentFromXml` の `refs` に入る。これも「読み取りの結果」に含める。
  */
 import { readApplicStatements } from '../applic/read.js';
 import { readContentFromXml } from '../content/read.js';
@@ -36,8 +38,9 @@ export function measureTextCoverage(xml: string): TextCoverage | undefined {
   if (!content.structured) return undefined;
   const { document } = defaultXmlEngine.parse(xml);
   const haystack = norm(
-    JSON.stringify([content.blocks, readApplicStatements(document)], (k, v: unknown) =>
-      k === 'location' ? undefined : v,
+    JSON.stringify(
+      [content.blocks, content.refs, readApplicStatements(document)],
+      (k, v: unknown) => (k === 'location' ? undefined : v),
     )
       .replace(/\\"/g, '"')
       .replace(/\\\\/g, '\\'),

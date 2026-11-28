@@ -366,3 +366,15 @@ describe('editContent: insert', () => {
     expect(r.refusals.map((x) => x.reason)).toEqual(['not-allowed-here']);
   });
 });
+
+describe('editContent: 先頭に BOM がある XML', () => {
+  it('BOM を残し、BOM の無い XML を編集したときと同じ所だけが変わる', () => {
+    const xml = dm();
+    const edits = [{ op: 'remove' as const, at: `${STEP}[3]/note` }];
+    const plain = editContent(xml, edits);
+    const withBom = editContent(`\uFEFF${xml}`, edits);
+    expect(plain.applied).toBe(true);
+    expect(withBom.applied).toBe(true);
+    expect(withBom.xml).toBe(`\uFEFF${plain.xml}`);
+  });
+});

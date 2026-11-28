@@ -897,6 +897,17 @@ class Reader {
     return Object.keys(a).length > 0 ? a : undefined;
   }
 
+  /** 参照の一覧（`refs`）の子を、書かれた順に読む。参照として読めない子は `notReadElements` で知らせる */
+  readRefList(refsEl: Element): ContentRef[] {
+    const out: ContentRef[] = [];
+    for (const r of elements(refsEl)) {
+      const ref = this.refOf(r);
+      if (ref) out.push(ref);
+      else this.markNotRead(r.nodeName);
+    }
+    return out;
+  }
+
   /** `refs` の中の参照と、直下の参照（dmRef など）を集める */
   private refsUnder(el: Element): ContentRef[] {
     const out: ContentRef[] = [];
@@ -1751,6 +1762,8 @@ export function readContent(
   }
   const reader = new Reader(engine);
   const blocks = reader.readChildren(content, { n: 0, prefix: '' });
+  const refsEl = firstChild(content, 'refs');
+  const refs = refsEl ? reader.readRefList(refsEl) : undefined;
   const unknownTotal = Object.values(reader.unknown).reduce((a, b) => a + b, 0);
   if (unknownTotal > 0) {
     notes.push(
@@ -1772,6 +1785,7 @@ export function readContent(
     kind,
     structured: true,
     blocks,
+    ...(refs ? { refs } : {}),
     notes,
     unknownElements: reader.unknown,
     notReadElements: reader.notRead,

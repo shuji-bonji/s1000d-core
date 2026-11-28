@@ -13,6 +13,11 @@ import type { ParsedXml, XPathValue, XmlEngine, XmlParseIssue } from './engine.j
 
 const { evaluateXPath } = fontoxpath;
 
+/** 先頭の BOM（U+FEFF）を取り除く。無ければそのまま返す */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export class XmldomFontoxpathEngine implements XmlEngine {
   parse(xml: string): ParsedXml {
     const issues: XmlParseIssue[] = [];
@@ -23,8 +28,11 @@ export class XmldomFontoxpathEngine implements XmlEngine {
     });
     let document: Document;
     try {
+      // 先頭の BOM（U+FEFF）は文書の一部ではない（XML 1.0 の 4.3.3）。xmldom は BOM を文書要素の外の文字として
+      // 断るので、渡す前に取り除く。元の文字列は変えない（範囲を求める側は `findRootStart` が BOM を読み飛ばす）。
+      // 1 行目の列の番号は、BOM を除いた位置になる
       // xmldom 0.9 は致命的なエラーを onError に渡さず ParseError を投げる
-      document = parser.parseFromString(xml, 'text/xml') as Document;
+      document = parser.parseFromString(stripBom(xml), 'text/xml') as Document;
     } catch (e) {
       const message = (e as Error).message;
       issues.push({ level: 'fatalError', message });

@@ -77,7 +77,10 @@ class Libxml2LoadedSchema implements LoadedSchema {
     let doc: XmlDocument | undefined;
     try {
       try {
-        doc = XmlDocument.fromString(xml, { url: options.url ?? basename(this.xsdPath) });
+        // 先頭の BOM（U+FEFF）は文書の一部ではないので、取り除いてから渡す（行の番号は変わらない）
+        doc = XmlDocument.fromString(xml.charCodeAt(0) === 0xfeff ? xml.slice(1) : xml, {
+          url: options.url ?? basename(this.xsdPath),
+        });
       } catch (e) {
         if (e instanceof XmlParseError) {
           return {
@@ -133,7 +136,9 @@ export class Libxml2SchemaValidator implements SchemaValidator {
     }
     let xsdDoc: XmlDocument | undefined;
     try {
-      xsdDoc = XmlDocument.fromString(text, { url: basename(abs) });
+      xsdDoc = XmlDocument.fromString(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text, {
+        url: basename(abs),
+      });
       const validator = XsdValidator.fromDoc(xsdDoc);
       const schema = new Libxml2LoadedSchema(abs, validator, xsdDoc, this.name);
       this.loaded.set(abs, schema);

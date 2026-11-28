@@ -2,17 +2,30 @@
 
 ## 0.19.0 (2026-11-28)
 
-S1000D Issue 4.2 の配布物で動かした結果（s1000d-stack の `docs/notes/issue-4.2-survey.md`、Issue [shuji-bonji/s1000d-stack#14](https://github.com/shuji-bonji/s1000d-stack/issues/14)）を受けた変更です。
+S1000D Issue 4.2・4.1・4.0 の配布物で動かした結果（s1000d-stack の `docs/notes/issue-4.2-survey.md`・`issue-4.0-4.1-survey.md`、Issue [shuji-bonji/s1000d-stack#14](https://github.com/shuji-bonji/s1000d-stack/issues/14)）を受けた変更です。
 
 ### 修正
 
 - **`findDefaultBrex` は、同じ DMC の既定 BREX が版を変えて複数あるとき、発行番号（同じなら作業中の番号）がいちばん大きいものを返します。** これまでは、条件に合う最初のファイルを返していました。Issue 4.2 の配布物には、元の `001-00` と Patch 4.2.B の `002-00` があり、`brex` を省いた `locateBrex` は `001-00` を、`brexDmRef` をたどる `createBrexResolver` は `002-00` を使っていました。DMC の違う既定 BREX（版の違う配布物を並べて置いたとき）の間では比べず、これまでどおり先に見つかった DMC のものを返します。既定 BREX が 1 つだけのとき（Issue 7 の配布物）の結果は変わりません。
 
+- **先頭に BOM（U+FEFF）がある XML を読めるようにしました**（[shuji-bonji/s1000d-stack#23](https://github.com/shuji-bonji/s1000d-stack/issues/23)）。これまでは、`defaultXmlEngine.parse` が整形式でないとして断り、検証は `wellFormed: false`、読み取りは誤りになっていました。XML の読み取りと XSD の検証器に渡す前に、BOM を取り除きます。元の文字列は変えません。`editContent`・`startRevision`・`addReasonForUpdate`・`applySegments` は BOM を残し、BOM の無い XML のときと同じ所だけを書き換えます。骨組みのハッシュ（`skeletonHash`）は、BOM の有無で変わりません。`stripBom` を公開しました。Issue 4.0 の Bike data set（XML 195 件のうち 126 件が BOM で始まる）で、読めない文書が 0 になることを確かめました。
+- **`findSchemaDirs` が、同じ XSD の写しを 1 つにまとめ、見つける順を名前の順に固定します**（[shuji-bonji/s1000d-stack#25](https://github.com/shuji-bonji/s1000d-stack/issues/25)）。
+  - 中身が 1 バイトも違わないフォルダー（データ辞書の中の写しなど）は、先に見つかった 1 つだけを返し、ほかの場所を `alsoAt` に入れます。データ辞書のフォルダーは後に見るので、XML Schema Package の側が残ります。`SchemaDir` に、中身の指紋（`fingerprint`）を足しました。
+  - 絶対 URL で import している XSD のフォルダー（Issue 7 のデータ辞書の中の写し）は、フォルダー名によらず除きます。`data_dictionary` で始まる名前のフォルダーを読まずに除く動きは、そのままです。
+  - `readIssueFromXsd` は、`brex.xsd` の URL の版が「Issue number」の版より細かいとき、URL の版を返します。Issue 4.0 の Patch 4.0.2 の XSD（「Issue number: 4.0」、URL は `S1000D_4-0-2`）は、`4.0.2` になります。
+  - `locateXsd` は、同じ版で中身の違うフォルダーがほかにあるとき、使わなかったものを `otherCandidates` で返します。使うのは、これまでどおり見つかった順の先頭です。
+  - `locateXsd` は、文書に版が書かれていないとき、その名前の XSD を持つフォルダーが 1 つだけなら、それを使います。
+
 ### 追加
 
 - **`buildDataModule` と `buildComment` に、対象とする S1000D の版の指定（`options.issue`）を足しました。** `"4.2"` を渡すと、`xsi:noNamespaceSchemaLocation` が `http://www.s1000d.org/S1000D_4-2/xml_schema_flat/<種類>.xsd` になります。省くと、これまでと同じ Issue 7 の URL です。変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じです。その版に無い要素（Issue 4.2 では `hazards`・`safetyInformation`・`infoNameVariant` など）が出力に入るかは調べません。その版の XSD での検証で分かります。`"7"` 以外を渡したときは、`notes` にこのことを書きます。版の書き方として読めない値（`"4-2"` など）は、`DraftInputError`・`CommentInputError`（`/options/issue`）にします。
 - 結果（`BuildResult`・`CommentBuildResult`）に、対象にした版（`issue`）を足しました。発行番号の `issueInfo` とは別のものです。
+- **`readContent`・`readContentFromXml` の結果に、内容部の先頭の参照の一覧（`refs`）を足しました**（[shuji-bonji/s1000d-stack#24](https://github.com/shuji-bonji/s1000d-stack/issues/24)）。`content/refs` に書かれた参照を、書かれた順に返します。`content/refs` が無い DM には付きません。これまでは、この一覧の `dmRef` が題名（`dmRefAddressItems/dmTitle`）を持っていても、結果のどこにも入らず、`notReadElements` にも出ませんでした。Issue 4.0 の Bike data set で 94 個、Issue 4.1 で 69 個のテキスト節点を落としていたのが、どちらも 0 になりました。`blocks` は変わりません。
 - 版とスキーマ名から URL を作る `buildSchemaLocation`、版の書き方を確かめる `isIssueString`、既定の版 `DEFAULT_BUILD_ISSUE`（`"7"`）を公開しました。`buildSchemaLocation` は `parseSchemaLocation` の逆です。
+
+### テスト
+
+- 配布物付きのテスト（`S1000D_SPEC_TESTS=1`）の `brex-known-refs.test.ts` の (d) が、0.16.0 から落ちていました。仕様書への参照を未解決に数えなくなったのに、期待する数が古いままでした。期待する数を直しました。
 
 ## 0.18.0 (2026-11-24)
 

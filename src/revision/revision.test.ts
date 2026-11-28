@@ -438,3 +438,19 @@ describe('addReasonForUpdate', () => {
     ).toBe('id-duplicate');
   });
 });
+
+describe('先頭に BOM がある XML', () => {
+  it('startRevision と addReasonForUpdate は BOM を残し、BOM の無い XML のときと同じ所だけを書き換える', () => {
+    const xml = released();
+    const plain = startRevision(xml, { issueType: 'status' });
+    const withBom = startRevision(`\uFEFF${xml}`, { issueType: 'status' });
+    expect(withBom.started).toBe(true);
+    expect(withBom.xml).toBe(`\uFEFF${plain.xml}`);
+
+    const reason = { text: '誤字を直した。', updateReasonType: 'urt01' };
+    const a = addReasonForUpdate(plain.xml, reason);
+    const b = addReasonForUpdate(withBom.xml, reason);
+    expect(b.added).toBe(true);
+    expect(b.xml).toBe(`\uFEFF${a.xml}`);
+  });
+});

@@ -1091,3 +1091,35 @@ describe('変更の印と、手順の text にまとめた段落の場所', () =
     ).toEqual([]);
   });
 });
+
+describe('内容部の先頭の参照の一覧（content/refs）', () => {
+  const WITH_REFS = wrap(
+    'descript',
+    `<refs>${DMREF}<externalPubRef><externalPubRefIdent><externalPubCode>KB-STD-001</externalPubCode><externalPubTitle>券売機の設置基準</externalPubTitle></externalPubRefIdent></externalPubRef></refs>
+     <description><levelledPara><title>概要</title><para>本文。</para></levelledPara></description>`,
+  );
+  it('refs に、書かれた順に返す。dmRef の題名（techName・infoName）を落とさない', () => {
+    const c = readContentFromXml(WITH_REFS);
+    expect(c.refs?.map((r) => r.kind)).toEqual(['dmRef', 'externalPubRef']);
+    expect(c.refs?.[0]).toMatchObject({
+      kind: 'dmRef',
+      target: 'KENBAIKI-A-10-00-00-00A-040A-A',
+      title: '券売機 - 説明',
+      techName: '券売機',
+      infoName: '説明',
+    });
+    // 本文の節点（blocks）には入れない
+    expect(JSON.stringify(c.blocks)).not.toContain('券売機 - 説明');
+    const cov = measureTextCoverage(WITH_REFS)!;
+    expect(cov.lost).toBe(0);
+  });
+  it('content/refs が無い DM には refs を付けない', () => {
+    const c = readContentFromXml(
+      wrap('descript', '<description><para>本文。</para></description>'),
+    );
+    expect(c.refs).toBeUndefined();
+  });
+  it('先頭に BOM がある XML も、BOM の無い XML と同じ結果になる', () => {
+    expect(readContentFromXml(`\uFEFF${WITH_REFS}`)).toEqual(readContentFromXml(WITH_REFS));
+  });
+});

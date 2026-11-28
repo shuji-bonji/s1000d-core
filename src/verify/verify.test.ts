@@ -105,6 +105,92 @@ describe('findSchemaDirs / readIssueFromXsd / locateXsd', () => {
   });
 });
 
+describe('findSchemaDirs: 同じ版のフォルダーが複数あるとき', () => {
+  let spec: string;
+  const put = (dir: string, files: Record<string, string>) => {
+    mkdirSync(dir, { recursive: true });
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+  };
+  /** 「Issue number」は元の版のまま、URL だけがパッチの版になっている brex.xsd（Issue 4.0 の Patch 4.0.2 と同じ形） */
+  const patchStub = (text: string, url: string) =>
+    BREX_XSD_STUB(text).replace(
+      '</xs:annotation>',
+      `</xs:annotation>\n  <xs:annotation><xs:documentation>URL: http://example.test/S1000D_${url}/xml_schema_flat/brex.xsd</xs:documentation></xs:annotation>`,
+    );
+  beforeAll(() => {
+    spec = mkdtempSync(join(tmpdir(), 's1000d-core-schemadirs-'));
+    const base = {
+      'brex.xsd': BREX_XSD_STUB('4.0'),
+      'common.xsd': COMMON_XSD,
+      'note.xsd': NOTE_XSD,
+    };
+    put(join(spec, 'XML Schema package', 'xml_schema_flat'), base);
+    // 中身が同じ写し（データ辞書の中）。名前は data_dictionary で始まらない
+    put(join(spec, 'Data dictionary', 'Files', 'xml_schema_flat'), base);
+    // パッチ: 中身が違い、URL の版だけが細かい
+    put(join(spec, 'Patches', '4.0.2', 'xml_schema_flat'), {
+      ...base,
+      'brex.xsd': patchStub('4.0', '4-0-2'),
+    });
+    // 同じ版で中身が違うもの（別の場所に置かれた XSD）
+    put(join(spec, 'Z other', 'xml_schema_flat'), {
+      ...base,
+      'note.xsd': NOTE_XSD.replace('xs:gYear', 'xs:string'),
+      'only-here.xsd': NOTE_XSD,
+    });
+    // 絶対 URL で import している写し（オフラインでは解決できない）
+    put(join(spec, 'Online copy', 'xml_schema_flat'), {
+      ...base,
+      'note.xsd': NOTE_XSD.replace(
+        'schemaLocation="common.xsd"',
+        'schemaLocation="http://example.test/common.xsd"',
+      ),
+    });
+  });
+  afterAll(() => rmSync(spec, { recursive: true, force: true }));
+
+  it('URL の版のほうが細かいときは、URL の版を使う', () => {
+    expect(readIssueFromXsd(join(spec, 'Patches', '4.0.2', 'xml_schema_flat', 'brex.xsd'))).toBe(
+      '4.0.2',
+    );
+    expect(readIssueFromXsd(join(spec, 'XML Schema package', 'xml_schema_flat', 'brex.xsd'))).toBe(
+      '4.0',
+    );
+  });
+  it('中身が同じ写しは 1 つにまとめ、データ辞書でない側を残す。絶対 URL で import する写しは除く', () => {
+    const dirs = findSchemaDirs([spec]);
+    expect(dirs.map((d) => d.dir.slice(spec.length + 1))).toEqual([
+      join('Patches', '4.0.2', 'xml_schema_flat'),
+      join('XML Schema package', 'xml_schema_flat'),
+      join('Z other', 'xml_schema_flat'),
+    ]);
+    const pkg = dirs.find((d) => d.dir.includes('XML Schema package'))!;
+    expect(pkg.alsoAt).toEqual([join(spec, 'Data dictionary', 'Files', 'xml_schema_flat')]);
+    expect(pkg.fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    expect(dirs.map((d) => d.issue)).toEqual(['4.0.2', '4.0', '4.0']);
+  });
+  it('同じ版で中身の違うフォルダーがあれば、先頭を使い、ほかを otherCandidates で知らせる', () => {
+    const dirs = findSchemaDirs([spec]);
+    const r = locateXsd('http://x/S1000D_4-0/xml_schema_flat/note.xsd', dirs);
+    expect(r.ok && r.xsdPath).toBe(join(spec, 'XML Schema package', 'xml_schema_flat', 'note.xsd'));
+    expect(r.ok && r.otherCandidates?.map((d) => d.dir)).toEqual([
+      join(spec, 'Z other', 'xml_schema_flat'),
+    ]);
+    const patch = locateXsd('http://x/S1000D_4-0-2/xml_schema_flat/note.xsd', dirs);
+    expect(patch.ok && patch.xsdPath).toBe(
+      join(spec, 'Patches', '4.0.2', 'xml_schema_flat', 'note.xsd'),
+    );
+    expect(patch.ok && patch.otherCandidates).toBeUndefined();
+  });
+  it('版の書かれていない文書は、その XSD を持つフォルダーが 1 つだけならそれを使う', () => {
+    const dirs = findSchemaDirs([spec]);
+    const one = locateXsd('only-here.xsd', dirs);
+    expect(one.ok && one.xsdPath).toBe(join(spec, 'Z other', 'xml_schema_flat', 'only-here.xsd'));
+    const many = locateXsd('note.xsd', dirs);
+    expect(!many.ok && many.reason).toBe('issue-mismatch');
+  });
+});
+
 describe('Libxml2SchemaValidator', () => {
   it('xs:import を解決して検証でき、違反には行番号が付く', async () => {
     const schema = await validator.load(join(flat7, 'note.xsd'));
@@ -117,6 +203,17 @@ describe('Libxml2SchemaValidator', () => {
     expect(bad.wellFormed).toBe(true);
     expect(bad.errors.map((e) => e.line)).toContain(4);
     expect(bad.errors.some((e) => /abcd|gYear/.test(e.message))).toBe(true);
+  });
+  it('先頭に BOM がある文書も検証でき、行番号は BOM の無い文書と同じ', async () => {
+    const schema = await validator.load(join(flat7, 'note.xsd'));
+    const ok = schema.validate(`\uFEFF${noteXml('  <title>Hello</title>\n  <year>2026</year>')}`);
+    expect(ok.wellFormed).not.toBe(false);
+    expect(ok.valid).toBe(true);
+    const bad = schema.validate(
+      `\uFEFF${noteXml('  <title>Hello</title>\n  <year>abcd</year>\n  <extra/>')}`,
+    );
+    expect(bad.valid).toBe(false);
+    expect(bad.errors.map((e) => e.line)).toContain(4);
   });
   it('整形式でない文書は wellFormed: false', async () => {
     const schema = await validator.load(join(flat7, 'note.xsd'));

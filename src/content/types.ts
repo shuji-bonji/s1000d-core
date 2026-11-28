@@ -200,6 +200,12 @@ export interface DataModuleContent {
   /** 構造化できたか。other のときは false で、blocks は空 */
   structured: boolean;
   blocks: ContentNode[];
+  /**
+   * 内容部の先頭の参照の一覧（`content/refs`）に書かれた参照を、書かれた順に。`content/refs` が無ければ付かない。
+   * `blocks` は本文の中の参照だけを持つので、ここにしか書かれていない題名（`dmRefAddressItems/dmTitle`）は
+   * この一覧で返す（読む側は内容を落とさない。s1000d-stack の DECISIONS D-31）。`structured` が false の DM では付かない
+   */
+  refs?: ContentRef[];
   /** 読み方の注意（構造化していない種類、知らない要素の数など） */
   notes: string[];
   /** 知らなかった要素名とその数（読み取り部分の改善の材料） */

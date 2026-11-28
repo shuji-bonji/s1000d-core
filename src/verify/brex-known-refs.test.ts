@@ -230,9 +230,12 @@ describe.skipIf(!enabled || !existsSync(specDir))('既定 BREX を参照する�
     expect(r.source).toBe('brex-chain');
     expect(r.target).toBe(formatDmc(found!.brex.dmCode));
     expect(suggestFixes(v, { xml: dm.xml })).toEqual([]);
-    // 比較: BREX の解決器を渡さなければ従来どおり未解決
+    // 比較: BREX の解決器を渡さなければ、既定 BREX への参照は解決できない。仕様書（S1000D）への参照なので、
+    // 検証状態は未解決に数えず、specificationReferences に数える（0.16.0）。詳細の一覧には残る
     const without = await verifyDataModule(dm.xml, { references: {} });
-    expect(without.status.references.unresolvedCount).toBe(1);
+    expect(without.status.references.unresolvedCount).toBe(0);
+    expect(without.status.references.specificationReferences).toBe(1);
+    expect(without.references?.unresolved).toHaveLength(1);
     // CSDB を渡しても既定 BREX はそこに無い（S1000D_SPEC_DIR にある）ので not-found
     const withCsdb = await verifyDataModule(dm.xml, { references: { csdb: [] } });
     expect(withCsdb.references?.unresolved.map((u) => u.reason)).toEqual(['not-found']);

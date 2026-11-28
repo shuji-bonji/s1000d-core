@@ -43,12 +43,27 @@ export interface FoundBrex {
   brex: BrexDocument;
 }
 
+/** 発行番号と作業中の番号を、大小を比べられる 1 つの数にする（読めなければ -1） */
+function issueOrder(brex: BrexDocument): number {
+  const i = brex.issueInfo;
+  if (!i) return -1;
+  const n = Number(i.issueNumber);
+  const w = Number(i.inWork);
+  if (!Number.isFinite(n) || !Number.isFinite(w)) return -1;
+  return n * 100 + w;
+}
+
 /**
  * フォルダー群の中から既定 BREX を探す。無ければ undefined。
  *
  * 配布物のデータ辞書には、ファイル名と中身の DMC が一致しない見本がある。
  * 中身の DMC がファイル名と一致し、かつ自分自身を参照しているもの（既定 BREX の性質。Chap 4.10.3）を優先し、
  * 無ければ最初に読めたものを返す。
+ *
+ * 同じ DMC の既定 BREX が、版を変えて複数あることがある（Issue 4.2 の配布物は、元の `001-00` と
+ * Patch 4.2.B の `002-00` を持つ）。そのときは、発行番号（同じなら作業中の番号）がいちばん大きいものを返す。
+ * `brexDmRef` をたどる側（`createBrexResolver`）が使う版と、そろえるためである。
+ * DMC の違う既定 BREX（版の違う配布物を並べて置いたとき）の間では比べず、先に見つかった DMC のものを返す。
  */
 export function findDefaultBrex(
   dirs: string[],
@@ -57,6 +72,7 @@ export function findDefaultBrex(
   const entries = listDataModules(dirs).filter(
     (e) => isDefaultBrexDmc(e.name.dmCode) && e.name.issueInfo !== undefined,
   );
+  let best: FoundBrex | undefined;
   let fallback: FoundBrex | undefined;
   for (const e of entries) {
     let r;
@@ -69,10 +85,18 @@ export function findDefaultBrex(
     const consistent = sameDmc(r.value.dmCode, e.name.dmCode);
     const selfRef =
       r.value.brexDmRef !== undefined && sameDmc(r.value.brexDmRef.dmCode, r.value.dmCode);
-    if (consistent && selfRef) return { path: e.path, brex: r.value };
+    if (consistent && selfRef) {
+      if (!best) best = { path: e.path, brex: r.value };
+      else if (
+        sameDmc(best.brex.dmCode, r.value.dmCode) &&
+        issueOrder(r.value) > issueOrder(best.brex)
+      )
+        best = { path: e.path, brex: r.value };
+      continue;
+    }
     fallback ??= { path: e.path, brex: r.value };
   }
-  return fallback;
+  return best ?? fallback;
 }
 
 export interface LocatedBrex {

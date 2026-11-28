@@ -20,6 +20,7 @@ import { findDefaultBrex } from '../brex/locate.js';
 import type { CsdbIndex } from '../csdb-index.js';
 import { formatDmc, formatDmcFileName } from '../dmc.js';
 import { formatPmc } from '../pmc.js';
+import { DEFAULT_BUILD_ISSUE, buildSchemaLocation, isIssueString } from '../schema-location.js';
 import type { DmCode, DmRef, IssueInfo, PmCode } from '../types.js';
 import type { Document, Element } from '../xml/engine.js';
 import { allocateDmc, allocateIcn, allocatePmc } from './allocate.js';
@@ -53,6 +54,13 @@ export interface BuildOptions {
   defaultBrexRef?: DmRef;
   /** 同じ DMC が `index` にあり、入力に issueInfo が無いときの版の上げ方（既定 'increment-issue'） */
   issuePolicy?: IssuePolicy;
+  /**
+   * 対象とする S1000D の版（"7"、"4.2" など。既定 "7"）。`xsi:noNamespaceSchemaLocation` の URL の版になる。
+   * 変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じ。その版に無い要素
+   * （Issue 4.2 では `hazards`・`safetyInformation`・`infoNameVariant` など）が出力に入るかは、ここでは調べない。
+   * その版の XSD での検証で分かる。版の書き方として読めないときは DraftInputError（`/options/issue`）
+   */
+  issue?: string;
   /** issueDate の既定（今日）を決める時計。テスト用 */
   now?: () => Date;
   /** graphic の原本の形式の既定（既定は PNG） */
@@ -70,6 +78,8 @@ export interface BuildResult {
   /** pm のみ */
   pmCode?: PmCode;
   issueInfo: IssueInfo;
+  /** 対象にした S1000D の版（`options.issue`。既定 "7"）。発行番号の `issueInfo` とは別のもの */
+  issue: string;
   /** `DMC-….XML` か `PMC-….XML`（発行情報と言語付き） */
   fileName: string;
   /** この組み立てで増えた分を加えた台帳（入力の台帳は書き換えない） */
@@ -218,6 +228,16 @@ export function buildDataModule(
   const isPm = draft.kind === 'pm';
   const notes: string[] = [];
   const index = options.index;
+  const issue = options.issue ?? DEFAULT_BUILD_ISSUE;
+  if (!isIssueString(issue))
+    throw new DraftInputError(
+      '/options/issue',
+      `issue must look like "7" or "4.2" (digits separated by "."), got "${String(issue)}"`,
+    );
+  if (issue !== DEFAULT_BUILD_ISSUE)
+    notes.push(
+      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). Validate against the Issue ${issue} XSD to see whether all of them exist in that issue.`,
+    );
 
   // 1. 識別: DMC / PMC
   let ledger: Record<string, string> = { ...(allocation.ledger ?? {}) };
@@ -357,10 +377,7 @@ export function buildDataModule(
   const rootName = isPm ? 'pm' : 'dmodule';
   const root = w.el(rootName);
   root.setAttribute('xmlns:xsi', XSI);
-  root.setAttribute(
-    'xsi:noNamespaceSchemaLocation',
-    `http://www.s1000d.org/S1000D_7/xml_schema_flat/${draft.kind}.xsd`,
-  );
+  root.setAttribute('xsi:noNamespaceSchemaLocation', buildSchemaLocation(draft.kind, issue));
 
   const language = w.el('language', {
     languageIsoCode: draft.language.languageIsoCode,
@@ -465,6 +482,7 @@ export function buildDataModule(
     dmCode,
     pmCode,
     issueInfo,
+    issue,
     fileName,
     ledger,
     icns,

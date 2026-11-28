@@ -1169,3 +1169,33 @@ describe('入力の形の検査（DraftInputError）', () => {
     });
   });
 });
+
+describe('buildDataModule: 対象とする S1000D の版（options.issue）', () => {
+  const brex = { defaultBrexRef: { dmCode: defaultBrex } };
+  it('省くと Issue 7 の URL になり、notes には何も足さない', () => {
+    const r = buildDataModule(F.descriptDraft(), F.kenbaikiAllocation(), brex);
+    expect(r.issue).toBe('7');
+    expect(r.xml).toContain('http://www.s1000d.org/S1000D_7/xml_schema_flat/descript.xsd');
+    expect(r.notes.some((n) => n.startsWith('issue:'))).toBe(false);
+  });
+  it('"4.2" を渡すと URL の版だけが変わり、ほかの XML は同じ', () => {
+    const base = buildDataModule(F.descriptDraft(), F.kenbaikiAllocation(), brex);
+    const r = buildDataModule(F.descriptDraft(), F.kenbaikiAllocation(), { ...brex, issue: '4.2' });
+    expect(r.issue).toBe('4.2');
+    expect(r.xml).toContain('http://www.s1000d.org/S1000D_4-2/xml_schema_flat/descript.xsd');
+    expect(r.xml.replace('S1000D_4-2/', 'S1000D_7/')).toBe(base.xml);
+    expect(readDataModuleInfo(r.xml).issue).toBe('4.2');
+    expect(r.notes.some((n) => n.startsWith('issue: built for S1000D Issue 4.2'))).toBe(true);
+  });
+  it('版の書き方として読めないものは DraftInputError（/options/issue）', () => {
+    for (const bad of ['4-2', 'Issue 7', '']) {
+      try {
+        buildDataModule(F.descriptDraft(), F.kenbaikiAllocation(), { ...brex, issue: bad });
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(DraftInputError);
+        expect((e as DraftInputError).path).toBe('/options/issue');
+      }
+    }
+  });
+});

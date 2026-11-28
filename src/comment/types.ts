@@ -121,6 +121,8 @@ export interface CommentBuildResult {
   /** 組み立てた XML（XML 宣言付き） */
   xml: string;
   commentCode: CommentCode;
+  /** 対象にした S1000D の版（`options.issue`。既定 "7"） */
+  issue: string;
   /** `COM-….XML`（仮の規則。`formatCommentFileName` の JSDoc を参照） */
   fileName: string;
   /** 補ったこと・出せなかったことの注記 */

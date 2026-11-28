@@ -18,6 +18,7 @@
  */
 import { DOMImplementation, XMLSerializer } from '@xmldom/xmldom';
 import { findDefaultBrex } from '../brex/locate.js';
+import { DEFAULT_BUILD_ISSUE, buildSchemaLocation, isIssueString } from '../schema-location.js';
 import type { CsdbIndex } from '../csdb-index.js';
 import { parseDmc } from '../dmc.js';
 import { parseDdnCode, parseDmlCode } from '../dml/code.js';
@@ -43,12 +44,17 @@ export interface BuildCommentOptions {
   defaultBrex?: DmCode | DmRef;
   /** 既定 BREX を探すフォルダー群（`S1000D_SPEC_DIR` など）。`defaultBrex` が無いときに使う */
   specDirs?: string[];
+  /**
+   * 対象とする S1000D の版（"7"、"4.2" など。既定 "7"）。`xsi:noNamespaceSchemaLocation` の URL の版になる。
+   * 変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じ。
+   * 版の書き方として読めないときは CommentInputError（`/options/issue`）
+   */
+  issue?: string;
   /** `yearOfDataIssue` と `issueDate` の既定（今日）を決める時計。テスト用 */
   now?: () => Date;
 }
 
 const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
-const SCHEMA_LOCATION = 'http://www.s1000d.org/S1000D_7/xml_schema_flat/comment.xsd';
 
 const pad = (n: number, width: number) => String(n).padStart(width, '0');
 
@@ -375,6 +381,16 @@ export function buildComment(
 ): CommentBuildResult {
   const notes: string[] = [];
   const now = (options.now ?? (() => new Date()))();
+  const issue = options.issue ?? DEFAULT_BUILD_ISSUE;
+  if (!isIssueString(issue))
+    throw new CommentInputError(
+      '/options/issue',
+      `issue must look like "7" or "4.2" (digits separated by "."), got "${String(issue)}"`,
+    );
+  if (issue !== DEFAULT_BUILD_ISSUE)
+    notes.push(
+      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). Validate against the Issue ${issue} XSD to see whether all of them exist in that issue.`,
+    );
 
   // 1. 入力の検査（列挙は形だけ。意味は付けない）
   if (!COMMENT_TYPES.includes(input.commentType)) {
@@ -505,7 +521,7 @@ export function buildComment(
   const b = new B(doc);
   const root = b.el('comment');
   root.setAttribute('xmlns:xsi', XSI);
-  root.setAttribute('xsi:noNamespaceSchemaLocation', SCHEMA_LOCATION);
+  root.setAttribute('xsi:noNamespaceSchemaLocation', buildSchemaLocation('comment', issue));
 
   const code: CommentCode = {
     modelIdentCode: mic,
@@ -563,5 +579,5 @@ export function buildComment(
   notes.push(
     'fileName: the COM-… rule is inferred from one sample in the distributed data dictionary (COM-AJ-I9034-2006-00365-R_SX-US.XML) and not confirmed in the specification; comment has no issueInfo, so no issue number is in the name.',
   );
-  return { xml, commentCode: code, fileName, notes };
+  return { xml, commentCode: code, issue, fileName, notes };
 }

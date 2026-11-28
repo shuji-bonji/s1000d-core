@@ -18,7 +18,13 @@ export {
   sameDmc,
 } from './dmc.js';
 export { formatIcn, parseIcn, parseIcnFileName } from './icn.js';
-export { parseSchemaLocation, type SchemaLocationInfo } from './schema-location.js';
+export {
+  DEFAULT_BUILD_ISSUE,
+  buildSchemaLocation,
+  isIssueString,
+  parseSchemaLocation,
+  type SchemaLocationInfo,
+} from './schema-location.js';
 export {
   readBrexDmRefOf,
   readCommentCodeElement,

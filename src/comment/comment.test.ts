@@ -690,3 +690,24 @@ describe.skipIf(!enabled || !existsSync(specDir))('comment: S1000D 配布物', (
     }
   });
 });
+
+describe('buildComment: 対象とする S1000D の版（options.issue）', () => {
+  it('省くと Issue 7、"4.2" を渡すと URL の版だけが変わる', () => {
+    const a = buildComment(base(), opts());
+    const b = buildComment(base(), { ...opts(), issue: '4.2' });
+    expect(a.issue).toBe('7');
+    expect(a.xml).toContain('http://www.s1000d.org/S1000D_7/xml_schema_flat/comment.xsd');
+    expect(b.issue).toBe('4.2');
+    expect(b.xml.replace('S1000D_4-2/', 'S1000D_7/')).toBe(a.xml);
+    expect(b.notes.some((n) => n.startsWith('issue: built for S1000D Issue 4.2'))).toBe(true);
+  });
+  it('版の書き方として読めないものは CommentInputError（/options/issue）', () => {
+    try {
+      buildComment(base(), { ...opts(), issue: '4-2' });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(CommentInputError);
+      expect((e as CommentInputError).path).toBe('/options/issue');
+    }
+  });
+});

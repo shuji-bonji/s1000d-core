@@ -13,13 +13,17 @@ const fx = (name: string) =>
  * 自作の「既定 BREX の形をした」最小の BREX。配布物の既定 BREX の内容は含まない。
  * `self` が真なら brexDmRef は自分自身を指す（既定 BREX の性質）。
  */
-function brexLike(systemDiffCode: string, refSystemDiffCode: string): string {
+function brexLike(
+  systemDiffCode: string,
+  refSystemDiffCode: string,
+  issue: { issueNumber: string; inWork: string } = { issueNumber: '001', inWork: '00' },
+): string {
   const code = (sdc: string) =>
     `<dmCode modelIdentCode="S1000D" systemDiffCode="${sdc}" systemCode="04" subSystemCode="1" subSubSystemCode="0" assyCode="0301" disassyCode="00" disassyCodeVariant="A" infoCode="022" infoCodeVariant="A" itemLocationCode="D"/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_7/xml_schema_flat/brex.xsd">
   <identAndStatusSection>
-    <dmAddress><dmIdent>${code(systemDiffCode)}<language languageIsoCode="en" countryIsoCode="US"/><issueInfo issueNumber="001" inWork="00"/></dmIdent>
+    <dmAddress><dmIdent>${code(systemDiffCode)}<language languageIsoCode="en" countryIsoCode="US"/><issueInfo issueNumber="${issue.issueNumber}" inWork="${issue.inWork}"/></dmIdent>
       <dmAddressItems><issueDate year="2026" month="10" day="24"/><dmTitle><techName>Test</techName><infoName>Business rules</infoName></dmTitle></dmAddressItems></dmAddress>
     <dmStatus issueType="new"><security securityClassification="01"/>
       <responsiblePartnerCompany enterpriseCode="T0001"/><originator enterpriseCode="T0001"/>
@@ -33,13 +37,16 @@ function brexLike(systemDiffCode: string, refSystemDiffCode: string): string {
 </dmodule>`;
 }
 
-const defaultName = (sdc: string) => `DMC-S1000D-${sdc}-04-10-0301-00A-022A-D_001-00_EN-US.XML`;
+const defaultName = (sdc: string, issue = '001-00') =>
+  `DMC-S1000D-${sdc}-04-10-0301-00A-022A-D_${issue}_EN-US.XML`;
 
 let root: string;
 let good: string; // 中身の DMC がファイル名と一致し、自分自身を参照する
 let decoy: string; // ファイル名は Z だが中身は X（データ辞書の見本と同じ食い違い）
 let onlyDecoy: string;
 let csdb: string; // 自作フィクスチャを DMC 名で置いた CSDB
+let patched: string; // 同じ DMC の既定 BREX が、版を変えて 3 つある（配布物のパッチと同じ形）
+let twoIssues: string; // DMC の違う既定 BREX が 2 つある（版の違う配布物を並べて置いた形）
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 's1000d-core-locate-'));
@@ -47,7 +54,29 @@ beforeAll(() => {
   decoy = join(root, 'decoy');
   onlyDecoy = join(root, 'only-decoy');
   csdb = join(root, 'csdb');
-  for (const d of [good, decoy, onlyDecoy, csdb]) mkdirSync(d);
+  patched = join(root, 'patched');
+  twoIssues = join(root, 'two-issues');
+  for (const d of [good, decoy, onlyDecoy, csdb, patched, twoIssues]) mkdirSync(d);
+  // 置く順（ファイル名の順）と版の大小が逆になるよう、パッチの側を先に並ぶフォルダーに入れる
+  mkdirSync(join(patched, 'a-original'));
+  mkdirSync(join(patched, 'b-patch'));
+  mkdirSync(join(patched, 'c-inwork'));
+  writeFileSync(join(patched, 'a-original', defaultName('F')), brexLike('F', 'F'));
+  writeFileSync(
+    join(patched, 'b-patch', defaultName('F', '002-00')),
+    brexLike('F', 'F', { issueNumber: '002', inWork: '00' }),
+  );
+  writeFileSync(
+    join(patched, 'c-inwork', defaultName('F', '001-01')),
+    brexLike('F', 'F', { issueNumber: '001', inWork: '01' }),
+  );
+  mkdirSync(join(twoIssues, 'a'));
+  mkdirSync(join(twoIssues, 'b'));
+  writeFileSync(join(twoIssues, 'a', defaultName('F')), brexLike('F', 'F'));
+  writeFileSync(
+    join(twoIssues, 'b', defaultName('J', '003-00')),
+    brexLike('J', 'J', { issueNumber: '003', inWork: '00' }),
+  );
   writeFileSync(join(good, defaultName('Z')), brexLike('Z', 'Z'));
   writeFileSync(join(decoy, defaultName('Z')), brexLike('X', 'Z'));
   // decoy を含むフォルダー群でも good が選ばれることを確かめるため、両方を 1 つの親に置く
@@ -92,6 +121,15 @@ describe('findDefaultBrex', () => {
     const found = findDefaultBrex([onlyDecoy]);
     expect(found?.path).toBe(join(onlyDecoy, defaultName('Z')));
     expect(found?.brex.dmCode.systemDiffCode).toBe('X');
+  });
+  it('同じ DMC の既定 BREX が版を変えて複数あれば、発行番号のいちばん大きいものを返す', () => {
+    const found = findDefaultBrex([patched]);
+    expect(found?.path).toBe(join(patched, 'b-patch', defaultName('F', '002-00')));
+    expect(found?.brex.issueInfo).toEqual({ issueNumber: '002', inWork: '00' });
+  });
+  it('DMC の違う既定 BREX の間では版を比べず、先に見つかった DMC のものを返す', () => {
+    const found = findDefaultBrex([join(twoIssues, 'a'), join(twoIssues, 'b')]);
+    expect(found?.brex.dmCode.systemDiffCode).toBe('F');
   });
   it('無いフォルダーや既定 BREX の無いフォルダーでは undefined', () => {
     expect(findDefaultBrex([csdb])).toBeUndefined();

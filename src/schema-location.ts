@@ -25,3 +25,30 @@ export function parseSchemaLocation(location: string | undefined | null): Schema
   if (issue) info.issue = issue[1].replace(/-/g, '.');
   return info;
 }
+
+/** 作る側（`buildDataModule`・`buildComment`）が、版の指定が無いときに使う S1000D の版 */
+export const DEFAULT_BUILD_ISSUE = '7';
+
+const ISSUE_RE = /^\d+(\.\d+)*$/;
+
+/** 版の書き方として読めるか（"7"、"4.2"、"4.0.1" など。数字をピリオドで区切ったもの） */
+export function isIssueString(value: unknown): value is string {
+  return typeof value === 'string' && ISSUE_RE.test(value);
+}
+
+/**
+ * 版とスキーマ名から、`xsi:noNamespaceSchemaLocation` に書く URL を作る（`parseSchemaLocation` の逆）。
+ * "7" → `http://www.s1000d.org/S1000D_7/xml_schema_flat/descript.xsd`、
+ * "4.2" → `http://www.s1000d.org/S1000D_4-2/xml_schema_flat/descript.xsd`。
+ * 版の書き方として読めないときは RangeError を投げる。その版の XSD があるかどうかは見ない。
+ */
+export function buildSchemaLocation(
+  schemaName: string,
+  issue: string = DEFAULT_BUILD_ISSUE,
+): string {
+  if (!isIssueString(issue))
+    throw new RangeError(
+      `issue must look like "7" or "4.2" (digits separated by "."): ${String(issue)}`,
+    );
+  return `http://www.s1000d.org/S1000D_${issue.replace(/\./g, '-')}/xml_schema_flat/${schemaName}.xsd`;
+}

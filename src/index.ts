@@ -76,6 +76,7 @@ export * from './comment/index.js';
 export {
   CONFIG_PATH_ENV,
   CSDB_DIR_ENV,
+  SCHEMA_DIR_ENV,
   SPEC_DIR_ENV,
   resolveStackConfig,
   specDirHowTo,

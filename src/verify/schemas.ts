@@ -19,7 +19,7 @@ import {
   readdirSync,
   statSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { parseSchemaLocation } from '../schema-location.js';
 
 export interface SchemaDir {
@@ -35,6 +35,8 @@ export interface SchemaDir {
   fingerprint?: string;
   /** 中身が同じだったほかのフォルダー（データ辞書の中の写しなど）。無ければ付かない */
   alsoAt?: string[];
+  /** 利用者が優先すると選んだフォルダー（`FindSchemaDirsOptions.preferred`）か、その下にある */
+  preferred?: boolean;
 }
 
 const MAX_DEPTH = 8;
@@ -94,6 +96,15 @@ function fingerprintXsds(dir: string, xsdNames: string[]): string {
   return h.digest('hex').slice(0, 16);
 }
 
+export interface FindSchemaDirsOptions {
+  /**
+   * 優先して使うフォルダー（利用者の設定。`resolveStackConfig().schemaDirs`）。`xml_schema_flat/` そのものか、
+   * それを含むフォルダーを渡す。見つかったフォルダーのうち、ここに挙げたフォルダーと同じか、その下にあるものを、
+   * 挙げた順に結果の先頭へ移す（`preferred: true` が付く）。`dirs` の下に無いフォルダーも、ここに挙げれば探す
+   */
+  preferred?: string[];
+}
+
 /**
  * フォルダー群から `xml_schema_flat/`（brex.xsd を含む）を探す。
  *
@@ -101,9 +112,10 @@ function fingerprintXsds(dir: string, xsdNames: string[]): string {
  * - 絶対 URL で import している XSD のフォルダー（Issue 7 のデータ辞書の中の写し）は除く。
  * - 中身が 1 バイトも違わないフォルダー（配布物のデータ辞書の中の写しなど）は、先に見つかった 1 つだけを返し、
  *   ほかの場所を `alsoAt` に入れる。
- * - 版が同じで中身が違うフォルダー（配布物の XSD とパッチの XSD）は、どちらも返す。どれを使うかは `locateXsd` が決める。
+ * - 版が同じで中身が違うフォルダー（配布物の XSD とパッチの XSD）は、どちらも返す。`locateXsd` は先頭を使うので、
+ *   利用者が `options.preferred` で選んだフォルダーを先頭へ移す。指定が無ければ、名前の順のまま。
  */
-export function findSchemaDirs(dirs: string[]): SchemaDir[] {
+export function findSchemaDirs(dirs: string[], options: FindSchemaDirsOptions = {}): SchemaDir[] {
   const out: SchemaDir[] = [];
   const seen = new Set<string>();
   const byFingerprint = new Map<string, SchemaDir>();
@@ -117,7 +129,8 @@ export function findSchemaDirs(dirs: string[]): SchemaDir[] {
     }
     entries.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
     const brex = join(dir, 'brex.xsd');
-    if (existsSync(brex) && !seen.has(dir)) {
+    if (existsSync(brex)) {
+      if (seen.has(dir)) return;
       seen.add(dir);
       const xsds = entries.filter((e) => e.isFile() && /\.xsd$/i.test(e.name)).map((e) => e.name);
       if (importsAbsoluteUrl(dir, xsds)) return;
@@ -154,14 +167,27 @@ export function findSchemaDirs(dirs: string[]): SchemaDir[] {
       visit(join(dir, e.name), depth + 1);
     }
   };
-  for (const d of dirs) {
+  const preferred = (options.preferred ?? []).map((p) => resolve(p));
+  // 利用者が選んだフォルダーを先に見る（中身が同じ写しがあるとき、選んだ側を残すため）
+  for (const d of [...preferred, ...dirs]) {
     try {
       if (statSync(d).isDirectory()) visit(d, 0);
     } catch {
       // 無いフォルダーは無視する
     }
   }
-  return out;
+  if (preferred.length === 0) return out;
+  const rank = (d: SchemaDir) => {
+    const full = resolve(d.dir);
+    const i = preferred.findIndex((p) => full === p || full.startsWith(p + sep));
+    return i < 0 ? preferred.length : i;
+  };
+  for (const d of out) if (rank(d) < preferred.length) d.preferred = true;
+  // 並べ替えは安定（同じ順位の中では、見つかった順のまま）
+  return out
+    .map((d, i) => ({ d, i, r: rank(d) }))
+    .sort((x, y) => x.r - y.r || x.i - y.i)
+    .map((x) => x.d);
 }
 
 export type LocateXsdResult =

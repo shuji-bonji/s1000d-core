@@ -1,7 +1,7 @@
 /**
  * 利用者が入手した S1000D の配布物の場所（`specDir`）と、プロジェクトの CSDB の場所（`csdbDirs`）を決める。
  *
- * 読む順番: 環境変数（`S1000D_SPEC_DIR` / `S1000D_CSDB_DIR`）→ 設定ファイル。
+ * 読む順番: 環境変数（`S1000D_SPEC_DIR` / `S1000D_CSDB_DIR` / `S1000D_SCHEMA_DIR`）→ 設定ファイル。
  * 設定ファイルの既定の場所は `$XDG_CONFIG_HOME/s1000d-stack/config.json`（`XDG_CONFIG_HOME` が無ければ `~/.config`）。
  * `S1000D_CONFIG` で別の場所を指せる。
  *
@@ -17,6 +17,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 export const SPEC_DIR_ENV = 'S1000D_SPEC_DIR';
 export const CSDB_DIR_ENV = 'S1000D_CSDB_DIR';
+export const SCHEMA_DIR_ENV = 'S1000D_SCHEMA_DIR';
 export const CONFIG_PATH_ENV = 'S1000D_CONFIG';
 
 /** 設定ファイルの中身 */
@@ -25,6 +26,11 @@ export interface StackConfigFile {
   specDir?: string;
   /** プロジェクトの CSDB のフォルダー（1 つなら文字列でもよい） */
   csdbDirs?: string[] | string;
+  /**
+   * 優先して使う XSD のフォルダー（1 つなら文字列でもよい）。`xml_schema_flat/` そのものか、それを含むフォルダー
+   * （パッチのフォルダーなど）を書く。配布物の中に、同じ版で中身の違う XSD が複数あるときに、どれを使うかを決める
+   */
+  schemaDirs?: string[] | string;
 }
 
 /** どこから決まったか */
@@ -35,6 +41,9 @@ export interface ResolvedStackConfig {
   specDirSource?: StackConfigSource;
   csdbDirs: string[];
   csdbDirsSource?: StackConfigSource;
+  /** 優先して使う XSD のフォルダー（`findSchemaDirs` の `preferred` に渡す）。指定が無ければ空 */
+  schemaDirs: string[];
+  schemaDirsSource?: StackConfigSource;
   /** 見に行った設定ファイルのパス */
   configPath: string;
   /** 設定ファイルがあったか */
@@ -91,7 +100,13 @@ export function resolveStackConfig(options: ResolveStackConfigOptions = {}): Res
   const home = options.home ?? homedir();
   const configPath = stackConfigPath({ env, home });
   const warnings: string[] = [];
-  const out: ResolvedStackConfig = { csdbDirs: [], configPath, configFound: false, warnings };
+  const out: ResolvedStackConfig = {
+    csdbDirs: [],
+    schemaDirs: [],
+    configPath,
+    configFound: false,
+    warnings,
+  };
 
   let file: StackConfigFile | undefined;
   try {
@@ -133,6 +148,21 @@ export function resolveStackConfig(options: ResolveStackConfigOptions = {}): Res
       .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
       .map(fromFile);
     if (out.csdbDirs.length > 0) out.csdbDirsSource = 'config';
+  }
+
+  const envSchema = readEnv(env, SCHEMA_DIR_ENV, warnings);
+  if (envSchema) {
+    out.schemaDirs = envSchema
+      .split(delimiter)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    out.schemaDirsSource = 'env';
+  } else if (file?.schemaDirs !== undefined) {
+    const list = Array.isArray(file.schemaDirs) ? file.schemaDirs : [file.schemaDirs];
+    out.schemaDirs = list
+      .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+      .map(fromFile);
+    if (out.schemaDirs.length > 0) out.schemaDirsSource = 'config';
   }
   return out;
 }

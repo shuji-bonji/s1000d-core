@@ -4,6 +4,7 @@ export {
   locateXsd,
   readIssueFromXsd,
   type LocateXsdResult,
+  type FindSchemaDirsOptions,
   type SchemaDir,
 } from './schemas.js';
 export {

@@ -53,6 +53,26 @@ describe('resolveStackConfig', () => {
     });
   });
 
+  it('優先して使う XSD のフォルダー（schemaDirs）を、設定ファイルか S1000D_SCHEMA_DIR から読む', () => {
+    const path = join(home, 's', 'config.json');
+    writeConfig(path, JSON.stringify({ schemaDirs: ['patch-a', '/abs/xml_schema_flat'] }));
+    const fromFile = resolveStackConfig({ env: { S1000D_CONFIG: path }, home });
+    expect(fromFile.schemaDirs).toEqual([join(home, 's', 'patch-a'), '/abs/xml_schema_flat']);
+    expect(fromFile.schemaDirsSource).toBe('config');
+    const one = join(home, 's1', 'config.json');
+    writeConfig(one, JSON.stringify({ schemaDirs: '/only/one' }));
+    expect(resolveStackConfig({ env: { S1000D_CONFIG: one }, home }).schemaDirs).toEqual([
+      '/only/one',
+    ]);
+    const fromEnv = resolveStackConfig({
+      env: { S1000D_CONFIG: path, S1000D_SCHEMA_DIR: ['/e/1', '/e/2'].join(delimiter) },
+      home,
+    });
+    expect(fromEnv.schemaDirs).toEqual(['/e/1', '/e/2']);
+    expect(fromEnv.schemaDirsSource).toBe('env');
+    expect(resolveStackConfig({ env: {}, home }).schemaDirs).toEqual([]);
+  });
+
   it('環境変数があれば設定ファイルより優先する。CSDB は区切り文字で複数', () => {
     const path = join(home, 'b', 'config.json');
     writeConfig(path, JSON.stringify({ specDir: '/from/file', csdbDirs: '/file/csdb' }));

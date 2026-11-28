@@ -15,6 +15,7 @@ S1000D Issue 4.2・4.1・4.0 の配布物で動かした結果（s1000d-stack �
   - `readIssueFromXsd` は、`brex.xsd` の URL の版が「Issue number」の版より細かいとき、URL の版を返します。Issue 4.0 の Patch 4.0.2 の XSD（「Issue number: 4.0」、URL は `S1000D_4-0-2`）は、`4.0.2` になります。
   - `locateXsd` は、同じ版で中身の違うフォルダーがほかにあるとき、使わなかったものを `otherCandidates` で返します。使うのは、これまでどおり見つかった順の先頭です。
   - `locateXsd` は、文書に版が書かれていないとき、その名前の XSD を持つフォルダーが 1 つだけなら、それを使います。
+  - **どのフォルダーを優先するかを、利用者が選べます。** `findSchemaDirs` の `options.preferred` に挙げたフォルダー（`xml_schema_flat/` そのものか、それを含むフォルダー）を、結果の先頭へ移します（`preferred: true`）。中身が同じ写しがあるときは、選んだ側を残します。設定は、環境変数 `S1000D_SCHEMA_DIR`（区切り文字で複数）か、設定ファイルの `"schemaDirs"` から `resolveStackConfig().schemaDirs` に読みます。指定が無ければ、名前の順のままです。
 
 ### 追加
 

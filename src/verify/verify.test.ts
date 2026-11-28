@@ -182,6 +182,31 @@ describe('findSchemaDirs: 同じ版のフォルダーが複数あるとき', () 
     );
     expect(patch.ok && patch.otherCandidates).toBeUndefined();
   });
+  it('利用者が選んだフォルダー（preferred）を先頭へ移す。親のフォルダーを挙げてもよい', () => {
+    const z = join(spec, 'Z other');
+    const dirs = findSchemaDirs([spec], { preferred: [z] });
+    expect(dirs[0]!.dir).toBe(join(z, 'xml_schema_flat'));
+    expect(dirs[0]!.preferred).toBe(true);
+    expect(dirs.slice(1).some((d) => d.preferred)).toBe(false);
+    const r = locateXsd('http://x/S1000D_4-0/xml_schema_flat/note.xsd', dirs);
+    expect(r.ok && r.xsdPath).toBe(join(z, 'xml_schema_flat', 'note.xsd'));
+    expect(r.ok && r.otherCandidates?.map((d) => d.dir)).toEqual([
+      join(spec, 'XML Schema package', 'xml_schema_flat'),
+    ]);
+    // 版の違う文書は、選んだフォルダーではなく、版の合うフォルダーを使う
+    const patch = locateXsd('http://x/S1000D_4-0-2/xml_schema_flat/note.xsd', dirs);
+    expect(patch.ok && patch.xsdPath).toBe(
+      join(spec, 'Patches', '4.0.2', 'xml_schema_flat', 'note.xsd'),
+    );
+  });
+  it('中身が同じ写しのうち、利用者が選んだ側を残す。探す元の外のフォルダーも、選べば探す', () => {
+    const dict = join(spec, 'Data dictionary', 'Files', 'xml_schema_flat');
+    const dirs = findSchemaDirs([join(spec, 'XML Schema package')], { preferred: [dict] });
+    expect(dirs.map((d) => d.dir)).toEqual([dict]);
+    expect(dirs[0]!.alsoAt).toEqual([join(spec, 'XML Schema package', 'xml_schema_flat')]);
+    // 無いフォルダーを選んでも、誤りにしない
+    expect(findSchemaDirs([spec], { preferred: [join(spec, 'missing')] })).toHaveLength(3);
+  });
   it('版の書かれていない文書は、その XSD を持つフォルダーが 1 つだけならそれを使う', () => {
     const dirs = findSchemaDirs([spec]);
     const one = locateXsd('only-here.xsd', dirs);

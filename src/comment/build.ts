@@ -397,11 +397,13 @@ export function buildComment(
       `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). What is known not to fit Issue 4.2, 4.1 or 4.0 is refused as an input error before building; for other issues, validate against the Issue ${issue} XSD.`,
     );
 
-  // その版に置けないと分かっているものは、組み立てずに入力の誤りにする（s1000d-stack の DECISIONS D-43）
-  if (compareIssues(issue, '4.1') < 0) {
+  // commentStatus に brexDmRef があるのは Issue 4.1 から。それより前の版のコメントには brexDmRef を書かない。
+  // 入力が brexDmRef を名指ししているときは、黙って落とさず、入力の誤りにする（s1000d-stack の DECISIONS D-43）
+  const withoutBrex = compareIssues(issue, '4.1') < 0;
+  if (withoutBrex && input.brexDmRef) {
     throw new CommentInputError(
-      '/options/issue',
-      `a comment cannot be built for S1000D Issue ${issue} yet: commentStatus has no brexDmRef before Issue 4.1, and this builder always writes one. Build it for Issue 4.1 or later.`,
+      '/brexDmRef',
+      `a comment cannot carry brexDmRef in S1000D Issue ${issue}: commentStatus has brexDmRef from Issue 4.1. Remove brexDmRef from the input.`,
     );
   }
 
@@ -508,7 +510,11 @@ export function buildComment(
   // 3. brexDmRef: 入力 → options.defaultBrex → 既定 BREX の探索。XSD が必須とするので、決まらなければ入力の誤り
   let brexRef: DmRef | undefined;
   const asRef = (x: DmCode | DmRef): DmRef => (isDmRef(x) ? x : { dmCode: x });
-  if (input.brexDmRef) {
+  if (withoutBrex) {
+    notes.push(
+      `brexDmRef: not written. In S1000D Issue ${issue} a comment has no brexDmRef (commentStatus has it from Issue 4.1), so the BREX of this comment is not stated in the file.`,
+    );
+  } else if (input.brexDmRef) {
     brexRef = asRef(input.brexDmRef);
     notes.push('brexDmRef: taken from the input.');
   } else if (options.defaultBrex) {
@@ -521,13 +527,13 @@ export function buildComment(
       notes.push(`brexDmRef: the default BREX found at ${found.path}.`);
     }
   }
-  if (!brexRef) {
+  if (!brexRef && !withoutBrex) {
     throw new CommentInputError(
       '/brexDmRef',
       'is required by comment.xsd: give brexDmRef, options.defaultBrex, or options.specDirs where the default BREX can be found',
     );
   }
-  if (brexRef.issueInfo) checkIssueInfo(brexRef.issueInfo, '/brexDmRef/issueInfo');
+  if (brexRef?.issueInfo) checkIssueInfo(brexRef.issueInfo, '/brexDmRef/issueInfo');
 
   // 4. 組み立て
   const doc = new DOMImplementation().createDocument(null, '');
@@ -560,7 +566,8 @@ export function buildComment(
     b.el('commentPriority', { commentPriorityCode: priority }),
   );
   if (responseType !== undefined) b.add(status, b.el('commentResponse', { responseType }));
-  b.add(status, commentRefsEl(b, input.refs), b.add(b.el('brexDmRef'), b.dmRefEl(brexRef)));
+  b.add(status, commentRefsEl(b, input.refs));
+  if (brexRef) b.add(status, b.add(b.el('brexDmRef'), b.dmRefEl(brexRef)));
   const remarks =
     input.remarks === undefined
       ? []

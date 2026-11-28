@@ -18,6 +18,7 @@ import * as F from './__fixtures__/kenbaiki-drafts.js';
 import { measureTextCoverage } from './__fixtures__/text-coverage.js';
 import { findDefaultBrex } from './brex/index.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
+import { buildComment } from './comment/build.js';
 import { buildDataModule } from './write/build.js';
 import { DraftInputError } from './write/errors.js';
 import type { DraftDataModule, DraftNode } from './write/types.js';
@@ -204,8 +205,8 @@ describe.skipIf(!enabled)('版を指定して組み立てた XML を、その版
     { issue: '4.2', dir: 'issue-4.2', refused: {} },
     // dmNode に title を置けるのは Issue 4.2 から
     { issue: '4.1', dir: 'issue-4.1', refused: { process: '/title' } },
-    // pmStatus に brexDmRef があるのは Issue 4.1 から
-    { issue: '4.0', dir: 'issue-4.0', refused: { process: '/title', pm: '/kind' } },
+    // Issue 4.0 の PM とコメントは、brexDmRef を書かずに組み立てる（pmStatus・commentStatus に brexDmRef が無い）
+    { issue: '4.0', dir: 'issue-4.0', refused: { process: '/title' } },
   ];
   for (const c of cases) {
     const spec = join(specRoot, c.dir);
@@ -241,10 +242,38 @@ describe.skipIf(!enabled)('版を指定して組み立てた XML を、その版
             icn: { ...allocation.icn, next: r.icnNext },
           };
           const v = await verifyDataModule(r.xml, { schema: { schemaDirs, validator } });
-          expect(v.status.schema.issue).toBe(c.issue);
-          if (v.status.schema.state !== 'valid')
-            invalid[name] = (v.schema?.errors ?? []).map((e) => e.message.slice(0, 120));
+          if (v.status.schema.state !== 'valid' || v.status.schema.issue !== c.issue)
+            invalid[name] = [
+              `${v.status.schema.state} (${v.status.schema.issue ?? '?'}): ${v.status.schema.reason ?? ''}`,
+              ...(v.schema?.errors ?? []).map((e) => e.message.slice(0, 120)),
+            ];
         }
+        // コメント
+        const comment = buildComment(
+          {
+            refs: [{ kind: 'dmRef', code: 'KENBAIKI-A-10-20-00-00A-040A-D' }],
+            commentType: 'q',
+            commentPriorityCode: 'cp01',
+            title: '用語の確認',
+            paragraphs: ['「予約」の定義を確認してほしい。'],
+            originator: {
+              enterpriseCode: 'K0001',
+              enterpriseName: 'Kenbaiki Works',
+              address: { city: 'Tokyo', country: 'Japan' },
+            },
+            senderIdent: 'K0001',
+            modelIdentCode: 'KENBAIKI',
+            securityClassification: '01',
+            language: { languageIsoCode: 'ja', countryIsoCode: 'JP' },
+          },
+          { specDirs: [spec], issue: c.issue },
+        );
+        const cv = await verifyDataModule(comment.xml, { schema: { schemaDirs, validator } });
+        if (cv.status.schema.state !== 'valid')
+          invalid.comment = [
+            `${cv.status.schema.state}: ${cv.status.schema.reason ?? ''}`,
+            ...(cv.schema?.errors ?? []).map((e) => e.message.slice(0, 160)),
+          ];
         expect(invalid).toEqual({});
         expect(refused).toEqual(c.refused);
       },

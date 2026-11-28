@@ -712,15 +712,26 @@ describe('buildComment: 対象とする S1000D の版（options.issue）', () =>
   });
 });
 
-describe('buildComment: その版に置けないものは、組み立てずに入力の誤りにする', () => {
-  it('Issue 4.1 より前の版では組み立てない（commentStatus に brexDmRef が無い）', () => {
-    expect(() => buildComment(base(), { ...opts(), issue: '4.1' })).not.toThrow();
+describe('buildComment: Issue 4.1 より前の版（commentStatus に brexDmRef が無い）', () => {
+  it('brexDmRef を書かずに組み立て、notes に書く。入力が brexDmRef を名指ししていれば入力の誤り', () => {
+    expect(buildComment(base(), { ...opts(), issue: '4.1' }).xml).toContain('<brexDmRef>');
+    const r = buildComment(base({ brexDmRef: undefined }), { ...opts(), issue: '4.0' });
+    expect(r.xml).not.toContain('brexDmRef');
+    expect(r.xml).toContain('<commentRefs>');
+    expect(r.notes.some((n) => n.startsWith('brexDmRef: not written.'))).toBe(true);
+    // options.defaultBrex は、この版では使わない（誤りにはしない）
+    const d = buildComment(base({ brexDmRef: undefined }), {
+      ...opts(),
+      issue: '4.0',
+      defaultBrex: BREX,
+    });
+    expect(d.xml).not.toContain('brexDmRef');
     try {
       buildComment(base(), { ...opts(), issue: '4.0' });
       expect.unreachable();
     } catch (e) {
       expect(e).toBeInstanceOf(CommentInputError);
-      expect((e as CommentInputError).path).toBe('/options/issue');
+      expect((e as CommentInputError).path).toBe('/brexDmRef');
     }
   });
 });

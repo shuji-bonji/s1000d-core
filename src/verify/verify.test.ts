@@ -240,6 +240,27 @@ describe('Libxml2SchemaValidator', () => {
     expect(bad.valid).toBe(false);
     expect(bad.errors.map((e) => e.line)).toContain(4);
   });
+  it('フォルダーが違えば、同じ名前の import を、その XSD のフォルダーのもので解決する', async () => {
+    // 版の違う配布物と同じ形: 2 つのフォルダーに同じ名前の common.xsd があり、定義している型の名前が違う
+    const other = join(root, 'other-issue', 'xml_schema_flat');
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, 'common.xsd'), COMMON_XSD.replace('shortText', 'oldText'));
+    writeFileSync(join(other, 'note.xsd'), NOTE_XSD.replace('c:shortText', 'c:oldText'));
+    writeFileSync(join(flat7, 'memo.xsd'), NOTE_XSD.replace('name="note"', 'name="memo"'));
+    const fresh = new Libxml2SchemaValidator();
+    try {
+      await fresh.load(join(flat7, 'note.xsd'));
+      // 別のフォルダーの XSD を読み込む（common.xsd が入れ替わる）
+      const b = await fresh.load(join(other, 'note.xsd'));
+      expect(b.validate(noteXml('  <title>Hello</title>\n  <year>2026</year>')).valid).toBe(true);
+      // 元のフォルダーの、まだコンパイルしていない XSD。元のフォルダーの common.xsd（shortText）で解決できること
+      const memo = await fresh.load(join(flat7, 'memo.xsd'));
+      const xml = noteXml('  <title>Hello</title>\n  <year>2026</year>').replace(/note/g, 'memo');
+      expect(memo.validate(xml).valid).toBe(true);
+    } finally {
+      fresh.dispose();
+    }
+  });
   it('整形式でない文書は wellFormed: false', async () => {
     const schema = await validator.load(join(flat7, 'note.xsd'));
     const r = schema.validate('<note><title>x</title>');

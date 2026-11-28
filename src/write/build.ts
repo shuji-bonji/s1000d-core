@@ -245,11 +245,13 @@ export function buildDataModule(
       `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). What is known not to fit Issue 4.2, 4.1 or 4.0 is refused as an input error before building; for other issues, validate against the Issue ${issue} XSD.`,
     );
 
-  // その版に置けないと分かっているものは、組み立てずに入力の誤りにする（D-43）
-  if (isPm && compareIssues(issue, '4.1') < 0) {
+  // pmStatus に brexDmRef があるのは Issue 4.1 から。それより前の版の PM には brexDmRef を書かない。
+  // 下書きが brexDmRef を名指ししているときは、黙って落とさず、入力の誤りにする（D-43）
+  const pmWithoutBrex = isPm && compareIssues(issue, '4.1') < 0;
+  if (pmWithoutBrex && draft.brexDmRef) {
     throw new DraftInputError(
-      '/kind',
-      `a publication module cannot be built for S1000D Issue ${issue} yet: pmStatus has no brexDmRef before Issue 4.1, and this builder always writes one. Build it for Issue 4.1 or later.`,
+      '/brexDmRef',
+      `a publication module cannot carry brexDmRef in S1000D Issue ${issue}: pmStatus has brexDmRef from Issue 4.1. Remove brexDmRef from the draft.`,
     );
   }
 
@@ -315,7 +317,11 @@ export function buildDataModule(
 
   // 3. brexDmRef: 入力 → allocation → 既定 BREX
   let brexRef: DmRef | undefined;
-  if (draft.brexDmRef) {
+  if (pmWithoutBrex) {
+    notes.push(
+      `brexDmRef: not written. In S1000D Issue ${issue} a publication module has no brexDmRef (pmStatus has it from Issue 4.1), so the BREX of this publication module is not stated in the file.`,
+    );
+  } else if (draft.brexDmRef) {
     brexRef = { dmCode: draft.brexDmRef };
     notes.push('brexDmRef: taken from the input.');
   } else if (allocation.brexDmRef) {

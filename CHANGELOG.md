@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.20.0 (2026-11-29)
+
+S1000D Issue 4.0 系で作れるものを広げました（s1000d-stack の DECISIONS の D-43。[shuji-bonji/s1000d-stack#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。
+
+### 変更
+
+- **Issue 4.1 より前の版（4.0・4.0.1・4.0.2）でも、パブリケーションモジュールとコメントを組み立てます。** 0.19.0 では、`pmStatus` と `commentStatus` に `brexDmRef` が無い版だという理由で、`DraftInputError`（`/kind`）と `CommentInputError`（`/options/issue`）にしていました。これらの版では `brexDmRef` を書かずに組み立て、書かなかったことを `notes` に入れます。
+  - 下書き（`draft.brexDmRef`）やコメントの入力（`input.brexDmRef`）で `brexDmRef` を明示しているときは、組み立てずに入力の誤り（位置は `/brexDmRef`）にします。書き手が指定した参照を、黙って落とさないためです。
+  - コメントは、`brexDmRef` を省くと CSDB の既定 BREX を探して使いますが、これらの版では探しません（既定 BREX が見つからなくても誤りにしません）。
+  - データモジュール（説明・手順・プロセス・故障探求）の `dmStatus` には、これらの版でも `brexDmRef` を書きます。動きは変わりません。
+
+### 修正
+
+- **版の違う XSD を同じプロセスで続けて検証しても、import 先の XSD が前の版のものにならないようにしました。** libxml2 の検証器に渡す import 先（`xlink.xsd`・`rdf.xsd` など）を、フォルダーをまたいで足し続けていたため、Issue 7 の XSD を使ったあとに Issue 4.x の `comment.xsd` を読むと、Issue 7 の `xlink.xsd` が使われ、XSD を読み込めずに `xsd.ran: false` になることがありました。XSD を読み込む前に、そのフォルダーのファイルだけを渡した状態にします。1 つの版だけを検証するときの結果は変わりません。
+
+### テスト
+
+- 配布物付きのテスト（`src/issues.spec.test.ts`）で、Issue 4.0 の PM とコメントを組み立て、Issue 4.0 の XSD で `valid` になることを確かめます。Issue 4.0 で入力の誤りになるのは、プロセス DM の節の題名だけです。
+
 ## 0.19.0 (2026-11-28)
 
 S1000D Issue 4.2・4.1・4.0 の配布物で動かした結果（s1000d-stack の `docs/notes/issue-4.2-survey.md`・`issue-4.0-4.1-survey.md`、Issue [shuji-bonji/s1000d-stack#14](https://github.com/shuji-bonji/s1000d-stack/issues/14)）を受けた変更です。

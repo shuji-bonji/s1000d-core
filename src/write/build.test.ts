@@ -1224,11 +1224,18 @@ describe('buildDataModule: その版に置けないものは、組み立てず�
       expect((e as DraftInputError).detail).toContain('Issue 4.1');
     }
   });
-  it('パブリケーションモジュールは、Issue 4.1 より前の版では組み立てない（pmStatus に brexDmRef が無い）', () => {
-    const build = (issue: string) =>
-      buildDataModule(F.pmDraft(), F.kenbaikiAllocation(), { ...brex, issue });
-    expect(pathOf(() => build('4.1'))).toBeUndefined();
-    expect(pathOf(() => build('4.0'))).toBe('/kind');
-    expect(pathOf(() => build('4.0.1'))).toBe('/kind');
+  it('パブリケーションモジュールは、Issue 4.1 より前の版では brexDmRef を書かない（pmStatus に brexDmRef が無い）', () => {
+    const build = (issue: string, over: Partial<DraftDataModule> = {}) =>
+      buildDataModule({ ...F.pmDraft(), ...over }, F.kenbaikiAllocation(), { ...brex, issue });
+    expect(build('4.1').xml).toContain('<brexDmRef>');
+    for (const issue of ['4.0', '4.0.1']) {
+      const r = build(issue);
+      expect(r.xml).not.toContain('brexDmRef');
+      expect(r.xml).toContain('<qualityAssurance>');
+      expect(r.notes.some((n) => n.startsWith('brexDmRef: not written.'))).toBe(true);
+    }
+    // 下書きが brexDmRef を名指ししているときは、黙って落とさない
+    expect(pathOf(() => build('4.0', { brexDmRef: defaultBrex }))).toBe('/brexDmRef');
+    expect(pathOf(() => build('4.1', { brexDmRef: defaultBrex }))).toBeUndefined();
   });
 });

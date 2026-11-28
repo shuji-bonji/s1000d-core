@@ -44,23 +44,41 @@ function toError(d: ErrorDetail): SchemaValidationError {
   return { message: d.message, line: d.line, column: d.col, level: d.level, xpath: d.xpath };
 }
 
-/** 入力プロバイダーは libxml2 全体で 1 つ。読み込んだ XSD のフォルダーの `.xsd` をすべてここに足す */
+/**
+ * 入力プロバイダーは libxml2 全体で 1 つ。import はファイル名だけで書かれているので（`xml.xsd`・`xlink.xsd`）、
+ * ファイル名で登録する。フォルダーが違っても同じファイル名なので、**いまコンパイルする XSD のフォルダーのもの**に
+ * 入れ替えてからコンパイルする。入れ替えないと、版の違う配布物の `xlink.xsd` を import してしまう
+ * （Issue 7 の XSD を読み込んだ後に、Issue 4.2 の `comment.xsd` をコンパイルすると失敗していた）。
+ * コンパイルは同期で終わるので、途中でほかのフォルダーに切り替わることは無い。
+ */
 let provider: XmlBufferInputProvider | undefined;
-const registeredDirs = new Set<string>();
+/** フォルダーごとの `.xsd` の中身（読み直さないために覚える） */
+const dirBuffers = new Map<string, Map<string, Uint8Array>>();
+/** いま登録してあるフォルダー */
+let activeDir: string | undefined;
 
-function registerSchemaDir(dir: string): void {
+function activateSchemaDir(dir: string): void {
   const abs = resolve(dir);
-  if (registeredDirs.has(abs)) return;
+  if (activeDir === abs) return;
   if (!provider) {
     provider = new XmlBufferInputProvider({});
     xmlRegisterInputProvider(provider);
   }
-  for (const name of readdirSync(abs)) {
-    if (!/\.xsd$/i.test(name)) continue;
-    // import は `xml.xsd` のようにファイル名だけで書かれているので、ファイル名で登録する
-    provider.addBuffer(name, readFileSync(join(abs, name)));
+  let buffers = dirBuffers.get(abs);
+  if (!buffers) {
+    buffers = new Map();
+    for (const name of readdirSync(abs)) {
+      if (!/\.xsd$/i.test(name)) continue;
+      buffers.set(name, readFileSync(join(abs, name)));
+    }
+    dirBuffers.set(abs, buffers);
   }
-  registeredDirs.add(abs);
+  // 前のフォルダーにだけあったファイルは外す（このフォルダーに無い import を、前の版のもので解決しない）
+  const previous = activeDir ? dirBuffers.get(activeDir) : undefined;
+  if (previous)
+    for (const name of previous.keys()) if (!buffers.has(name)) provider.removeBuffer(name);
+  for (const [name, buffer] of buffers) provider.addBuffer(name, buffer);
+  activeDir = abs;
 }
 
 class Libxml2LoadedSchema implements LoadedSchema {
@@ -127,7 +145,7 @@ export class Libxml2SchemaValidator implements SchemaValidator {
     const abs = resolve(xsdPath);
     const cached = this.loaded.get(abs);
     if (cached) return cached;
-    registerSchemaDir(dirname(abs));
+    activateSchemaDir(dirname(abs));
     let text: string;
     try {
       text = readFileSync(abs, 'utf8');

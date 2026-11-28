@@ -293,6 +293,8 @@ function withChange(node: ContentNode, el: Element): ContentNode {
       ...(document !== undefined ? { document } : {}),
     };
   }
+  const controlRefs = attr(el, 'controlAuthorityRefs')?.split(/\s+/).filter(Boolean);
+  if (controlRefs && controlRefs.length > 0) node.controlAuthorityRefs = controlRefs;
   return node;
 }
 
@@ -908,6 +910,7 @@ class Reader {
       'securityClassification',
       'authorityName',
       'authorityDocument',
+      'controlAuthorityRefs',
       ...CHANGE_ATTRS,
     ]);
     return Object.keys(a).length > 0 ? a : undefined;

@@ -192,6 +192,11 @@ export interface ContentNode {
    * 書いた組織とは別の組織（データを受け取る側など）が管理していることを示す。値は解釈しない
    */
   authority?: ContentAuthority;
+  /**
+   * この要素の内容を管理する機関への参照（`controlAuthorityRefs`。Issue 7）。識別・状態部の `controlAuthorities` の
+   * `id` が、書かれた順に入る。値は解釈しない
+   */
+  controlAuthorityRefs?: string[];
   /** その他の属性（process の variableName、式を文にした expression など） */
   attrs?: Record<string, string>;
   children: ContentNode[];

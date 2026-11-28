@@ -30,13 +30,16 @@ import type { DmCode, DmRef, IssueInfo, PmCode } from '../types.js';
 import type { Document, Element } from '../xml/engine.js';
 import { allocateDmc, allocateIcn, allocatePmc } from './allocate.js';
 import { Writer, newDocument, type AssetUse } from './content/common.js';
+import { CONTROL_AUTHORITY_ABSENT_UNTIL } from './content/control-authority-elements.js';
 import { buildContent } from './content/index.js';
 import { DraftInputError } from './errors.js';
 import {
   DRAFT_KINDS,
   type Allocation,
   type DraftApplic,
+  type DraftControlAuthority,
   type DraftDataModule,
+  type DraftNode,
   type IssuePolicy,
 } from './types.js';
 
@@ -203,6 +206,93 @@ function applicEl(w: Writer, a: DraftApplic): Element {
 }
 
 /** 必須の文字列プロパティを確かめる */
+/** `controlAuthorityGroup`（`security` の後ろに置く） */
+function controlAuthorityGroupEl(w: Writer, list: DraftControlAuthority[]): Element {
+  const group = w.el('controlAuthorityGroup');
+  for (const a of list) {
+    const e = w.el('controlAuthority', {
+      id: a.id,
+      controlAuthorityType: a.type,
+      controlAuthoritySource: a.source,
+      controlAuthorityValue: a.value,
+    });
+    if (a.text !== undefined && a.text !== '') {
+      const text = w.el('controlAuthorityText');
+      text.appendChild(w.textEl('para', a.text));
+      e.appendChild(text);
+    }
+    group.appendChild(e);
+  }
+  return group;
+}
+
+/** 下書きの節点の id を、木をたどって集める */
+function collectNodeIds(nodes: DraftNode[], into: Set<string>): Set<string> {
+  for (const n of nodes) {
+    if (n.id !== undefined) into.add(n.id);
+    if (n.children) collectNodeIds(n.children, into);
+  }
+  return into;
+}
+
+/**
+ * `draft.controlAuthorities` を確かめる。対象の版に `controlAuthorityGroup` が無いとき、形が違うとき、id が重なるときは、
+ * 位置付きで投げる（黙って落とさない。D-43）
+ */
+function checkControlAuthorities(draft: DraftDataModule, issue: string): DraftControlAuthority[] {
+  const list: unknown = draft.controlAuthorities;
+  if (list === undefined) return [];
+  if (compareIssues(issue, CONTROL_AUTHORITY_ABSENT_UNTIL) <= 0) {
+    throw new DraftInputError(
+      '/controlAuthorities',
+      `controlAuthorities cannot be written for S1000D Issue ${issue}: controlAuthorityGroup does not exist up to Issue ${CONTROL_AUTHORITY_ABSENT_UNTIL}. For Issue 4.0 to ${CONTROL_AUTHORITY_ABSENT_UNTIL}, use authority (authorityName / authorityDocument) on the nodes of the body instead.`,
+    );
+  }
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new DraftInputError(
+      '/controlAuthorities',
+      'controlAuthorities must be a non-empty array (omit it when there is no control authority)',
+    );
+  }
+  const used = collectNodeIds(draft.body, new Set<string>());
+  (list as DraftControlAuthority[]).forEach((a, i) => {
+    const path = `/controlAuthorities[${i + 1}]`;
+    if (typeof a !== 'object' || a === null) {
+      throw new DraftInputError(path, 'a control authority must be an object (id, type, …)');
+    }
+    for (const k of Object.keys(a)) {
+      if (!['id', 'type', 'source', 'value', 'text'].includes(k)) {
+        throw new DraftInputError(
+          `${path}/${k}`,
+          `unknown field "${k}" (a control authority has id, type, source, value, text)`,
+        );
+      }
+    }
+    if (typeof a.id !== 'string' || !/^[A-Za-z_][\w.-]*$/.test(a.id)) {
+      throw new DraftInputError(
+        `${path}/id`,
+        'a control authority needs id (an XML name: a letter or "_" first, then letters, digits, ".", "-", "_")',
+      );
+    }
+    if (used.has(a.id)) {
+      throw new DraftInputError(`${path}/id`, `id "${a.id}" is already used in the data module`);
+    }
+    used.add(a.id);
+    if (typeof a.type !== 'string' || !/^cat(0[1-9]|[1-9][0-9])$/.test(a.type)) {
+      throw new DraftInputError(
+        `${path}/type`,
+        'a control authority needs type: one of cat01 to cat99 (controlAuthorityType). Its meaning is set by the project, so ask the user; there is no default.',
+      );
+    }
+    for (const k of ['source', 'value', 'text'] as const) {
+      if (a[k] !== undefined && typeof a[k] !== 'string') {
+        throw new DraftInputError(`${path}/${k}`, `${k} must be a string`);
+      }
+    }
+  });
+  return list as DraftControlAuthority[];
+}
+
 function need(value: string | undefined, path: string): string {
   if (value === undefined || value === '') {
     throw new DraftInputError(path, 'is required');
@@ -342,6 +432,8 @@ export function buildDataModule(
     }
   }
 
+  const controlAuthorities = checkControlAuthorities(draft, issue);
+
   // 4. 内容部（図の ICN の採番もここで行う）
   const doc = newDocument();
   let icnNext = allocation.icn.next;
@@ -351,6 +443,7 @@ export function buildDataModule(
     document: doc,
     notes,
     issue,
+    controlAuthorityIds: new Set(controlAuthorities.map((a) => a.id)),
     resolveIcn: (target, _kind, path) => {
       if (icns[target]) return icns[target];
       let a;
@@ -437,6 +530,7 @@ export function buildDataModule(
   append(
     status,
     w.el('security', { securityClassification: security }),
+    ...(controlAuthorities.length > 0 ? [controlAuthorityGroupEl(w, controlAuthorities)] : []),
     w.el('responsiblePartnerCompany', { enterpriseCode: eCode }),
     w.el('originator', { enterpriseCode: oCode }),
   );

@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.21.0 (2026-11-29)
+
+S1000D Issue 7 の「内容を管理する機関」（`controlAuthority`）を、読み書きできるようにしました（[shuji-bonji/s1000d-stack#26](https://github.com/shuji-bonji/s1000d-stack/issues/26)）。0.20.0 で対応した Issue 4.0〜4.2 の `authorityName`・`authorityDocument` に当たる、Issue 7 の仕組みです。
+
+### 追加
+
+- **下書きに、内容を管理する機関の一覧（`DraftDataModule.controlAuthorities`）と、節点からの参照（`DraftNode.controlAuthorityRefs`）を足しました。**
+  - `controlAuthorities: [{ id, type, source?, value?, text? }]` は、`dmStatus`（PM は `pmStatus`）の `security` の後ろに `controlAuthorityGroup/controlAuthority` として書きます。`type` が `controlAuthorityType`（`cat01`〜`cat99`）、`source` が `controlAuthoritySource`、`value` が `controlAuthorityValue`、`text` が `controlAuthorityText/para` です。
+  - 節点の `controlAuthorityRefs: ["<id>", …]` は、その節点の要素の属性 `controlAuthorityRefs` になります。
+  - `type` は必須で、既定の値はありません。`cat01` などの意味はプロジェクトが決めるので、組み立てる側は選びません。
+  - `schema/draft.schema.json` にも足しました。
+- **Issue 4.0〜4.2 の `authority` とは、別の項目にしました。** Issue 7 では、機関を識別・状態部に 1 回定義して、内容部から id で指します。必須の `controlAuthorityType` に当たるものが Issue 4.x に無く、1 つの節点が複数の機関を指せるので、`authority: { name, document? }` からは作れません。
+- **書けないときは、組み立てずに `DraftInputError` にします**（s1000d-stack の DECISIONS の D-43）。
+
+  | 場合                                                                                         | 位置                                            |
+  | -------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+  | 対象の版が Issue 4.2 以前（`controlAuthorityGroup` と `controlAuthorityRefs` が XSD に無い） | `/controlAuthorities`、`…/controlAuthorityRefs` |
+  | `controlAuthorities` に無い id を指している                                                  | `…/controlAuthorityRefs[n]`                     |
+  | `controlAuthorityRefs` を持てない要素になる節点                                              | `…/controlAuthorityRefs`                        |
+  | `id` が無い・XML の名前でない・文書の中で重なる                                              | `/controlAuthorities[n]/id`                     |
+  | `type` が無い・`cat01`〜`cat99` でない                                                       | `/controlAuthorities[n]/type`                   |
+  | 知らない項目がある                                                                           | `/controlAuthorities[n]/<項目>`                 |
+
+  属性を持てる要素の名前は `CONTROL_AUTHORITY_ELEMENTS`（`src/write/content/control-authority-elements.ts`。Issue 7 の XSD の descript・proced・process・fault・pm から取り出した 234 個）にあります。Issue 4.x と違い、`para` にも付けられます。
+
+- Issue 7 向けの下書きで `authority` を使ったときの誤りの文で、`controlAuthorities` と `controlAuthorityRefs` を案内します。
+- `editContent` の insert の節点でも `controlAuthorityRefs` を書けます。指せるのは、編集する文書に既にある `controlAuthority` の id です。機関の一覧そのものを足す・変える編集は、ありません。
+- **読み取りの結果に足しました。**
+  - `readDataModuleInfo` の `identAndStatus.controlAuthorities`: `dmStatus/controlAuthorityGroup` の `controlAuthority` を、並びの順に返します（`id`・`type`・`source`・`value`・`text`・`dmRef`・`symbols`・`applicRefId`・`attrs`）。値は解釈しません。
+  - 本文の節点（`ContentNode`）の `controlAuthorityRefs: string[]`。これまで `attrs` に入っていた節点では、`attrs` からは外れます。
+
+### テスト
+
+- 配布物付きのテスト（`src/issues.spec.test.ts`）で、`controlAuthorities` と `controlAuthorityRefs` を付けた下書き（説明の節と段落、手順、故障探求の手順、PM の項目）が Issue 7 の XSD で `valid` になることと、Bike Samples の DM 1 件（機関 5 つ、参照のある手順 4 つ）を読めることを確かめます。
+
 ## 0.20.0 (2026-11-29)
 
 S1000D Issue 4.0〜4.2 で作れるものを広げました（s1000d-stack の DECISIONS の D-43。[shuji-bonji/s1000d-stack#26](https://github.com/shuji-bonji/s1000d-stack/issues/26)・[#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。

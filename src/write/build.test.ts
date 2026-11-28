@@ -1328,3 +1328,119 @@ describe('管理された内容の印（authority → authorityName・authorityD
     expect(pathOf(() => xmlOf('pm', body, '4.0'))).toBe('/body[1]/authority');
   });
 });
+
+describe('内容を管理する機関（controlAuthorities と controlAuthorityRefs。Issue 7）', () => {
+  const authorities = [
+    {
+      id: 'ca-0001',
+      type: 'cat01',
+      source: 'XYZ',
+      value: 'XYZ-2026-01',
+      text: '変更してはならない文。',
+    },
+    { id: 'ca-0002', type: 'cat10', source: 'XYZ' },
+  ];
+  const draft = (over: Partial<DraftDataModule> = {}): DraftDataModule => ({
+    ...F.procedDraft(),
+    controlAuthorities: authorities,
+    body: [
+      { kind: 'step', text: '元の手順。' },
+      {
+        kind: 'step',
+        controlAuthorityRefs: ['ca-0001', 'ca-0002'],
+        children: [{ kind: 'para', text: '管理された手順。', controlAuthorityRefs: ['ca-0002'] }],
+      },
+    ],
+    ...over,
+  });
+  const build = (d: DraftDataModule, issue?: string) =>
+    buildDataModule(d, F.kenbaikiAllocation(), {
+      defaultBrexRef: { dmCode: defaultBrex },
+      ...(issue ? { issue } : {}),
+    });
+  const pathOf = (f: () => unknown): string | undefined => {
+    try {
+      f();
+      return undefined;
+    } catch (e) {
+      expect(e).toBeInstanceOf(DraftInputError);
+      return (e as DraftInputError).path;
+    }
+  };
+
+  it('dmStatus の security の後ろに controlAuthorityGroup を書き、節点に controlAuthorityRefs を書く。読み戻せる', () => {
+    const { xml } = build(draft());
+    expect(xml.replace(/\s+/g, ' ')).toContain(
+      '<security securityClassification="01"/> <controlAuthorityGroup> ' +
+        '<controlAuthority id="ca-0001" controlAuthorityType="cat01" controlAuthoritySource="XYZ" controlAuthorityValue="XYZ-2026-01"> ' +
+        '<controlAuthorityText> <para>変更してはならない文。</para> </controlAuthorityText> </controlAuthority> ' +
+        '<controlAuthority id="ca-0002" controlAuthorityType="cat10" controlAuthoritySource="XYZ"/> ' +
+        '</controlAuthorityGroup> <responsiblePartnerCompany',
+    );
+    expect(xml).toContain('<proceduralStep controlAuthorityRefs="ca-0001 ca-0002">');
+    expect(xml).toContain('<para controlAuthorityRefs="ca-0002">');
+    // 読み戻し
+    const info = readDataModuleInfo(xml);
+    expect(info.identAndStatus?.controlAuthorities).toEqual([
+      {
+        id: 'ca-0001',
+        type: 'cat01',
+        source: 'XYZ',
+        value: 'XYZ-2026-01',
+        text: '変更してはならない文。',
+      },
+      { id: 'ca-0002', type: 'cat10', source: 'XYZ' },
+    ]);
+    const steps = readContentFromXml(xml).blocks.filter((n) => n.kind === 'step');
+    expect(steps.map((n) => n.controlAuthorityRefs)).toEqual([undefined, ['ca-0001', 'ca-0002']]);
+    expect(JSON.stringify(steps[1]!.attrs ?? {})).not.toContain('controlAuthorityRefs');
+  });
+  it('Issue 4.2 以前では、controlAuthorities も controlAuthorityRefs も入力の誤り', () => {
+    for (const issue of ['4.2', '4.1', '4.0']) {
+      expect(pathOf(() => build(draft(), issue))).toBe('/controlAuthorities');
+      expect(pathOf(() => build(draft({ controlAuthorities: undefined }), issue))).toBe(
+        '/body[2]/controlAuthorityRefs',
+      );
+    }
+  });
+  it('controlAuthorities に無い id を指す節点は、入力の誤り', () => {
+    expect(pathOf(() => build(draft({ controlAuthorities: [authorities[0]!] })))).toBe(
+      '/body[2]/controlAuthorityRefs[2]',
+    );
+    expect(pathOf(() => build(draft({ controlAuthorities: undefined })))).toBe(
+      '/body[2]/controlAuthorityRefs[1]',
+    );
+  });
+  it('type は cat01〜cat99。省略や別の値、重なる id は入力の誤り', () => {
+    const one = (a: Record<string, unknown>) =>
+      pathOf(() =>
+        build(draft({ controlAuthorities: [a as never], body: [{ kind: 'step', text: 'x' }] })),
+      );
+    expect(one({ id: 'ca-0001' })).toBe('/controlAuthorities[1]/type');
+    expect(one({ id: 'ca-0001', type: 'cat00' })).toBe('/controlAuthorities[1]/type');
+    expect(one({ type: 'cat01' })).toBe('/controlAuthorities[1]/id');
+    expect(one({ id: 'ca-0001', type: 'cat01', name: 'x' })).toBe('/controlAuthorities[1]/name');
+    expect(
+      pathOf(() =>
+        build(
+          draft({
+            controlAuthorities: [authorities[0]!, { ...authorities[1]!, id: 'ca-0001' }],
+            body: [{ kind: 'step', text: 'x' }],
+          }),
+        ),
+      ),
+    ).toBe('/controlAuthorities[2]/id');
+    expect(pathOf(() => build(draft({ body: [{ kind: 'step', id: 'ca-0001', text: 'x' }] })))).toBe(
+      '/controlAuthorities[1]/id',
+    );
+  });
+  it('authority（Issue 4.0〜4.2 の印）を Issue 7 で使うと、controlAuthorities を案内して断る', () => {
+    try {
+      build(draft({ body: [{ kind: 'step', text: 'x', authority: { name: 'xyz' } }] }));
+      expect.unreachable();
+    } catch (e) {
+      expect((e as DraftInputError).path).toBe('/body[1]/authority');
+      expect((e as Error).message).toContain('controlAuthorities');
+    }
+  });
+});

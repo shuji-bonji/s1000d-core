@@ -348,6 +348,12 @@
           "type": "string",
           "description": "要素の id。fault の step、process の dialog・if では必須"
         },
+        "controlAuthorityRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "この節点の内容を管理する機関（S1000D Issue 7 の controlAuthorityRefs）。DraftDataModule.controlAuthorities の id を並べる。対象の版が Issue 4.2 以前のとき、controlAuthorities に無い id のとき、この属性を持てない要素になる節点のときは入力の誤り。Issue 4.0〜4.2 では authority を使う"
+        },
         "authority": {
           "type": "object",
           "description": "管理された内容の印（S1000D Issue 4.0〜4.2 の authorityName・authorityDocument）。この節点とその子の内容を、書いた組織とは別の組織が管理していることを示す。対象の版が Issue 4.2 より後のとき（既定の Issue 7 を含む）と、印を付けられない要素になる節点では入力の誤り",
@@ -597,6 +603,27 @@
         "securityClassification": {
           "type": "string",
           "description": "機密区分（列挙のまま。省略を許さない）"
+        },
+        "controlAuthorities": {
+          "type": "array",
+          "minItems": 1,
+          "description": "内容を管理する機関の一覧（S1000D Issue 7 の dmStatus/controlAuthorityGroup）。内容部の節点は controlAuthorityRefs でこの id を指す。対象の版が Issue 4.2 以前のときは入力の誤り",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "description": "節点の controlAuthorityRefs が指す id。文書の中で重ならないこと" },
+              "type": {
+                "type": "string",
+                "pattern": "^cat(0[1-9]|[1-9][0-9])$",
+                "description": "controlAuthorityType（cat01〜cat99）。意味はプロジェクトが決めるので、利用者に確かめる。既定は無い"
+              },
+              "source": { "type": "string", "description": "controlAuthoritySource。内容を管理する機関" },
+              "value": { "type": "string", "description": "controlAuthorityValue。根拠の規則などの引用" },
+              "text": { "type": "string", "description": "controlAuthorityText/para の文" }
+            },
+            "required": ["id", "type"],
+            "additionalProperties": false
+          }
         },
         "responsiblePartnerCompany": {
           "type": "string",

@@ -140,6 +140,12 @@ export interface DraftNode {
    * DraftInputError（黙って落とさない）
    */
   authority?: { name: string; document?: string };
+  /**
+   * この節点の内容を管理する機関（S1000D Issue 7 の属性 `controlAuthorityRefs`）。`DraftDataModule.controlAuthorities` の
+   * `id` を並べる。対象の版が Issue 4.2 以前のとき、`controlAuthorities` に無い id のとき、この属性を持てない要素に
+   * なる節点のときは、DraftInputError（黙って落とさない）。Issue 4.0〜4.2 では `authority` を使う
+   */
+  controlAuthorityRefs?: string[];
   /** 見出し。definition では用語、table・figure では表題、process の if では使わない */
   title?: string;
   /** この節点自身の文（子の段落や手順は含まない）。参照は text に埋め込まず refs に書く。`<` と `&` はそのまま書く */
@@ -218,6 +224,23 @@ export type IssuePolicy = 'increment-issue' | 'increment-inwork' | 'keep';
  * データモジュール 1 件の入力。識別情報（採番の元）、題名、機密区分と内容部の木を持つ。
  * 識別・状態部の残り（issueInfo の既定、brexDmRef、qualityAssurance など）は `buildDataModule` が決める。
  */
+/**
+ * 内容を管理する機関 1 つ（S1000D Issue 7 の `dmStatus/controlAuthorityGroup/controlAuthority`）。
+ * 内容部の節点は、`controlAuthorityRefs` でこの `id` を指す。値は解釈しない
+ */
+export interface DraftControlAuthority {
+  /** `@id`。節点の `controlAuthorityRefs` が指す。文書の中で重ならないこと */
+  id: string;
+  /** `@controlAuthorityType`。`cat01`〜`cat99`。意味はプロジェクトが決めるので、利用者が指定する（既定は無い） */
+  type: string;
+  /** `@controlAuthoritySource`。内容を管理する機関 */
+  source?: string;
+  /** `@controlAuthorityValue`。根拠の規則などの引用 */
+  value?: string;
+  /** `controlAuthorityText/para` の文 */
+  text?: string;
+}
+
 export interface DraftDataModule {
   /** DMC を自分で指定するか、採番の規則（allocation）に任せるかのどちらか */
   dmCode?: DmCode;
@@ -234,6 +257,11 @@ export interface DraftDataModule {
   title: { techName: string; infoName?: string };
   /** 列挙のまま。省略を許さない（agent-platform.md「機密区分を必ず付ける」） */
   securityClassification: string;
+  /**
+   * 内容を管理する機関の一覧（S1000D Issue 7 の `controlAuthorityGroup`）。`security` の後ろに書く。
+   * 対象の版が Issue 4.2 以前のときは DraftInputError（その版の XSD に無い）
+   */
+  controlAuthorities?: DraftControlAuthority[];
   /** 責任企業の企業コード（`responsiblePartnerCompany/@enterpriseCode`）。省略時は allocation.icn.cageCode */
   responsiblePartnerCompany?: string;
   /** 作成者の企業コード（`originator/@enterpriseCode`）。省略時は allocation.icn.cageCode */

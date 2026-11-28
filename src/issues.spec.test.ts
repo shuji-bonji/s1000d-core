@@ -17,6 +17,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import * as F from './__fixtures__/kenbaiki-drafts.js';
 import { measureTextCoverage } from './__fixtures__/text-coverage.js';
 import { findDefaultBrex } from './brex/index.js';
+import { readContentFromXml } from './content/index.js';
+import type { ContentNode } from './content/types.js';
+import { readDataModuleInfo } from './data-module.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
 import { buildComment } from './comment/build.js';
 import { buildDataModule } from './write/build.js';
@@ -299,4 +302,95 @@ describe.skipIf(!enabled)('版を指定して組み立てた XML を、その版
       180_000,
     );
   }
+});
+
+/**
+ * 内容を管理する機関（Issue 7 の controlAuthorityGroup と controlAuthorityRefs）。
+ * 自作の下書きに付けて組み立てたものが Issue 7 の XSD に通ることと、Bike Samples の実物を読めることを確かめる。
+ */
+describe.skipIf(!enabled)('内容を管理する機関（Issue 7 の controlAuthority）', () => {
+  const spec = join(specRoot, 'issue-7');
+  const controlAuthorities = [
+    { id: 'ca-0001', type: 'cat01', source: 'XYZ', value: 'XYZ-2026-01', text: '変更しない文。' },
+    { id: 'ca-0002', type: 'cat10', source: 'XYZ' },
+  ];
+  /** 最初に見つかった、その種類の節点に controlAuthorityRefs を付けた下書き */
+  const withRefs = (draft: DraftDataModule, kind: DraftNode['kind']): DraftDataModule => {
+    let done = false;
+    const mark = (n: DraftNode): DraftNode => {
+      if (!done && n.kind === kind) {
+        done = true;
+        return { ...n, controlAuthorityRefs: ['ca-0001', 'ca-0002'] };
+      }
+      return n.children ? { ...n, children: n.children.map(mark) } : n;
+    };
+    const body = draft.body.map(mark);
+    if (!done) throw new Error(`no "${kind}" node in the draft`);
+    return { ...draft, body, controlAuthorities };
+  };
+
+  it.skipIf(!existsSync(spec))(
+    '下書きに付けて組み立てたものは、Issue 7 の XSD で valid',
+    async () => {
+      const schemaDirs = findSchemaDirs([spec]);
+      const drafts: Array<[string, DraftDataModule]> = [
+        ['descript section', withRefs(F.descriptDraft(), 'section')],
+        ['descript para', withRefs(F.descriptDraft(), 'para')],
+        ['proced step', withRefs(F.procedDraft(), 'step')],
+        ['fault step', withRefs(F.faultDraft(), 'step')],
+        ['pm section', withRefs(F.pmDraft(), 'section')],
+      ];
+      const invalid: Record<string, string[]> = {};
+      let allocation = F.kenbaikiAllocation();
+      for (const [name, draft] of drafts) {
+        const r = buildDataModule(draft, allocation, { specDirs: [spec] });
+        allocation = {
+          ...allocation,
+          ledger: r.ledger,
+          icn: { ...allocation.icn, next: r.icnNext },
+        };
+        expect(r.xml).toContain('controlAuthorityRefs="ca-0001 ca-0002"');
+        const v = await verifyDataModule(r.xml, { schema: { schemaDirs, validator } });
+        if (v.status.schema.state !== 'valid')
+          invalid[name] = [
+            `${v.status.schema.state}: ${v.status.schema.reason ?? ''}`,
+            ...(v.schema?.errors ?? []).map((e) => e.message.slice(0, 160)),
+          ];
+      }
+      expect(invalid).toEqual({});
+    },
+    180_000,
+  );
+
+  it.skipIf(!existsSync(spec))('Bike Samples の実物から、機関の一覧と節点の参照を読める', () => {
+    const dir = join(spec, 'bike-samples', 'S1000D Issue 7 Bike Samples');
+    const xml = readFileSync(
+      join(dir, 'DMC-S1000DBIKE-AAA-D00-00-01-00AA-720A-A_005-00_EN-US.XML'),
+      'utf8',
+    );
+    const authorities = readDataModuleInfo(xml).identAndStatus?.controlAuthorities ?? [];
+    expect(authorities.map((a) => [a.id, a.type, a.source, a.text !== undefined])).toEqual([
+      ['controlAuthority-001', 'cat01', 'FAA', true],
+      ['controlAuthority-002', 'cat06', 'FAA', true],
+      ['controlAuthority-003', 'cat10', 'FAA', false],
+      ['controlAuthority-004', 'cat05', 'FAA', false],
+      ['controlAuthority-005', 'cat13', 'ZAP', false],
+    ]);
+    // 記号（symbol）の ICN も落とさない
+    expect(authorities.map((a) => a.symbols?.length ?? 0)).toEqual([1, 1, 0, 0, 0]);
+    const refs: string[][] = [];
+    const walk = (nodes: ContentNode[]) => {
+      for (const n of nodes) {
+        if (n.controlAuthorityRefs) refs.push(n.controlAuthorityRefs);
+        walk(n.children);
+      }
+    };
+    walk(readContentFromXml(xml).blocks);
+    expect(refs).toEqual([
+      ['controlAuthority-001'],
+      ['controlAuthority-002'],
+      ['controlAuthority-003', 'controlAuthority-004'],
+      ['controlAuthority-005'],
+    ]);
+  });
 });

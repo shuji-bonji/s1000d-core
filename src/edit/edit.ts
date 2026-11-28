@@ -496,9 +496,12 @@ export function editContent(
     doc.documentElement!.getAttribute('xsi:noNamespaceSchemaLocation'),
   ).issue;
   const documentIds = new Set<string>();
+  // 文書の controlAuthority の id（insert の節点の controlAuthorityRefs が指せるもの）
+  const controlAuthorityIds = new Set<string>();
   for (const el of descendantsAndSelf(doc.documentElement!)) {
     const id = el.getAttribute('id');
     if (id) documentIds.add(id);
+    if (id && el.nodeName === 'controlAuthority') controlAuthorityIds.add(id);
   }
 
   // 変更の印の指定を確かめる
@@ -737,6 +740,7 @@ export function editContent(
             documentIds,
             options,
             documentIssue,
+            controlAuthorityIds,
           );
         } catch (e) {
           if (!(e instanceof DraftInputError)) throw e;
@@ -1046,10 +1050,17 @@ function buildNode(
   documentIds: Set<string>,
   options: EditContentOptions,
   issue: string | undefined,
+  controlAuthorityIds: ReadonlySet<string>,
 ): Element {
   const w = new Writer(
     kind,
-    { ...options.build, document: newDocument(), notes: [], ...(issue ? { issue } : {}) },
+    {
+      ...options.build,
+      document: newDocument(),
+      notes: [],
+      controlAuthorityIds,
+      ...(issue ? { issue } : {}),
+    },
     [node],
   );
   // 文書に既にある id への internalRef を受け付ける

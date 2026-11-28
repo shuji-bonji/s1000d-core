@@ -11,6 +11,10 @@
  */
 import { DEFAULT_BUILD_ISSUE, compareIssues } from '../../schema-location.js';
 import { AUTHORITY_ELEMENTS, AUTHORITY_LAST_ISSUE } from './authority-elements.js';
+import {
+  CONTROL_AUTHORITY_ABSENT_UNTIL,
+  CONTROL_AUTHORITY_ELEMENTS,
+} from './control-authority-elements.js';
 import { DOMImplementation } from '@xmldom/xmldom';
 import { parseDmc } from '../../dmc.js';
 import { parseIcn } from '../../icn.js';
@@ -51,6 +55,8 @@ export interface BuildContentContext {
    * 組み立てずに DraftInputError にする（黙って落とさない。s1000d-stack の DECISIONS D-43）
    */
   issue?: string;
+  /** `DraftDataModule.controlAuthorities` の id。節点の `controlAuthorityRefs` が指せるもの */
+  controlAuthorityIds?: ReadonlySet<string>;
 }
 
 /** 親の種類（'body' は `DraftDataModule.body` の直下） */
@@ -159,6 +165,7 @@ const COMMON_FIELDS = new Set<string>([
   'applicRefId',
   'securityClassification',
   'authority',
+  'controlAuthorityRefs',
 ]);
 
 /** 複数形の説明用 */
@@ -177,6 +184,8 @@ export class Writer {
    * `common` が要素に書いたときに外す。組み立ての最後に残っていれば、印を書けない種類の節点だったことになる
    */
   readonly pendingAuthority = new Map<DraftNode, string>();
+  /** `controlAuthorityRefs` を持つ節点のうち、まだ要素に書いていないもの（節点 → 入力の位置）。使い方は上と同じ */
+  readonly pendingControlAuthority = new Map<DraftNode, string>();
 
   constructor(
     readonly dmKind: DraftKind,
@@ -218,7 +227,22 @@ export class Writer {
       e.setAttribute('securityClassification', node.securityClassification);
     }
     if (node.authority !== undefined) this.applyAuthority(e, node);
+    if (node.controlAuthorityRefs !== undefined) this.applyControlAuthorityRefs(e, node);
     return e;
+  }
+
+  /** `controlAuthorityRefs` を要素に書く。この要素に付けられなければ、位置付きで投げる */
+  private applyControlAuthorityRefs(e: Element, node: DraftNode): void {
+    const path = this.pendingControlAuthority.get(node);
+    if (path === undefined) return; // 書き済み（同じ節点から 2 つ目の要素を作ったとき）
+    if (!CONTROL_AUTHORITY_ELEMENTS.has(e.nodeName)) {
+      throw new DraftInputError(
+        `${path}/controlAuthorityRefs`,
+        `a "${node.kind}" node becomes the element ${e.nodeName}, which cannot carry controlAuthorityRefs. Put controlAuthorityRefs on an enclosing node that can carry it (for example a section, a step, a para, a list, a table or a figure).`,
+      );
+    }
+    e.setAttribute('controlAuthorityRefs', node.controlAuthorityRefs!.join(' '));
+    this.pendingControlAuthority.delete(node);
   }
 
   /** 管理された内容の印を要素に書く。その版でこの要素に付けられなければ、位置付きで投げる */
@@ -243,6 +267,12 @@ export class Writer {
 
   /** 組み立ての最後に呼ぶ。印を書けなかった節点が残っていれば、位置付きで投げる */
   assertAuthorityWritten(): void {
+    for (const [node, path] of this.pendingControlAuthority) {
+      throw new DraftInputError(
+        `${path}/controlAuthorityRefs`,
+        `a "${node.kind}" node cannot carry controlAuthorityRefs here: the element it becomes has no such attribute. Put controlAuthorityRefs on an enclosing node that can carry it (for example a section, a step, a para, a list, a table or a figure).`,
+      );
+    }
     for (const [node, path] of this.pendingAuthority) {
       throw new DraftInputError(
         `${path}/authority`,
@@ -265,7 +295,7 @@ export class Writer {
       if (compareIssues(issue, AUTHORITY_LAST_ISSUE) > 0) {
         throw new DraftInputError(
           `${path}/authority`,
-          `authority (authorityName / authorityDocument) can be written only for S1000D Issue 4.0 to ${AUTHORITY_LAST_ISSUE}; the target is Issue ${issue}, where these attributes do not exist (later issues mark controlled content differently, which this builder does not write yet).`,
+          `authority (authorityName / authorityDocument) can be written only for S1000D Issue 4.0 to ${AUTHORITY_LAST_ISSUE}; the target is Issue ${issue}, where these attributes do not exist. From Issue 7, declare the authority in controlAuthorities of the data module and refer to it with controlAuthorityRefs on the node.`,
         );
       }
       const a = node.authority as { name?: unknown; document?: unknown };
@@ -282,6 +312,32 @@ export class Writer {
         );
       }
       this.pendingAuthority.set(node, path);
+    }
+    if (node.controlAuthorityRefs !== undefined) {
+      // controlAuthority は Issue 7 の仕組み。Issue 4.2 までの XSD には無い（authorityName・authorityDocument を使う）
+      const issue = this.ctx.issue ?? DEFAULT_BUILD_ISSUE;
+      if (compareIssues(issue, CONTROL_AUTHORITY_ABSENT_UNTIL) <= 0) {
+        throw new DraftInputError(
+          `${path}/controlAuthorityRefs`,
+          `controlAuthorityRefs cannot be written for S1000D Issue ${issue}: the attribute does not exist up to Issue ${CONTROL_AUTHORITY_ABSENT_UNTIL}. For Issue 4.0 to ${CONTROL_AUTHORITY_ABSENT_UNTIL}, use authority (authorityName / authorityDocument) on the node instead.`,
+        );
+      }
+      const refs: unknown = node.controlAuthorityRefs;
+      if (!Array.isArray(refs) || refs.length === 0) {
+        throw new DraftInputError(
+          `${path}/controlAuthorityRefs`,
+          'controlAuthorityRefs must be a non-empty array of ids from controlAuthorities',
+        );
+      }
+      refs.forEach((id, i) => {
+        if (typeof id !== 'string' || !this.ctx.controlAuthorityIds?.has(id)) {
+          throw new DraftInputError(
+            `${path}/controlAuthorityRefs[${i + 1}]`,
+            `"${String(id)}" is not the id of a control authority. Declare it in controlAuthorities of the data module first (id, type and optionally source, value, text).`,
+          );
+        }
+      });
+      this.pendingControlAuthority.set(node, path);
     }
     for (const [k, v] of Object.entries(node)) {
       if (v === undefined || COMMON_FIELDS.has(k)) continue;

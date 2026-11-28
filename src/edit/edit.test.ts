@@ -406,3 +406,31 @@ describe('insert の節点の、管理された内容の印（authority）', () 
     expect(r.refusals[0]!.message).toContain('/edits[1]/node/authority');
   });
 });
+
+describe('insert の節点の、管理する機関への参照（controlAuthorityRefs。Issue 7）', () => {
+  const withGroup = dm().replace(
+    '</identAndStatusSection>',
+    '<dmStatus><controlAuthorityGroup><controlAuthority id="ca-0001" controlAuthorityType="cat01"/></controlAuthorityGroup></dmStatus></identAndStatusSection>',
+  );
+  const insert = (xml: string, refs: string[]) =>
+    editContent(xml, [
+      {
+        op: 'insert',
+        to: `${STEP}[1]`,
+        position: 'after',
+        node: { kind: 'step', text: '管理された手順。', controlAuthorityRefs: refs },
+      },
+    ]);
+
+  it('文書の controlAuthority の id を指す節点は、controlAuthorityRefs を書く', () => {
+    expect(withGroup).toContain('<controlAuthorityGroup>');
+    const r = insert(withGroup, ['ca-0001']);
+    expect(r.refusals).toEqual([]);
+    expect(r.xml).toContain('<proceduralStep controlAuthorityRefs="ca-0001">');
+  });
+  it('文書に無い id を指す節点は、書かずに断る', () => {
+    const r = insert(withGroup, ['ca-0009']);
+    expect(r.applied).toBe(false);
+    expect(r.refusals[0]!.message).toContain('/edits[1]/node/controlAuthorityRefs[1]');
+  });
+});

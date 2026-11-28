@@ -143,6 +143,32 @@ export interface ReasonForUpdate {
  * 識別・状態部（`identAndStatusSection`）から読み取れる主な情報。
  * 要素が無いものは undefined。
  */
+/**
+ * 内容を管理する機関 1 つ（Issue 7 の `dmStatus/controlAuthorityGroup/controlAuthority`）。値は解釈しない
+ * （`controlAuthorityType` の `cat01` などの意味は、プロジェクトが決める）。
+ * 内容部の要素は、属性 `controlAuthorityRefs` でこの `id` を指す
+ */
+export interface ControlAuthority {
+  /** `@id` */
+  id?: string;
+  /** `@controlAuthorityType`（書かれた値のまま） */
+  type?: string;
+  /** `@controlAuthoritySource`（内容を管理する機関） */
+  source?: string;
+  /** `@controlAuthorityValue`（根拠の規則などの引用） */
+  value?: string;
+  /** `controlAuthorityText/para` の文 */
+  text?: string;
+  /** `dmRef`（文の代わりに、別のデータモジュールを指しているとき） */
+  dmRef?: DmRef;
+  /** `symbol/@infoEntityIdent`（機関の記号の ICN）を、並びの順に */
+  symbols?: string[];
+  /** `@applicRefId` */
+  applicRefId?: string;
+  /** 上のほかに書かれている属性（変更の印、機密区分など） */
+  attrs?: Record<string, string>;
+}
+
 export interface IdentAndStatus {
   dmCode: DmCode;
   language?: Language;
@@ -161,6 +187,8 @@ export interface IdentAndStatus {
   brexDmRef?: DmRef;
   /** `dmStatus/@issueType` */
   issueType?: string;
+  /** 内容を管理する機関（`dmStatus/controlAuthorityGroup/controlAuthority`。Issue 7）を、並びの順に。1 つも無ければ undefined */
+  controlAuthorities?: ControlAuthority[];
   /** 更新の理由（`dmStatus/reasonForUpdate`）を、並びの順に。1 つも無ければ undefined */
   reasonForUpdates?: ReasonForUpdate[];
   /** `qualityAssurance` の子要素名（unverified / firstVerification / secondVerification） */

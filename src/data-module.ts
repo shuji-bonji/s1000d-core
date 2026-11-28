@@ -9,6 +9,7 @@ import type { CommentCode, CommentType } from './comment/types.js';
 import { formatDmc } from './dmc.js';
 import { parseSchemaLocation } from './schema-location.js';
 import type {
+  ControlAuthority,
   DataModuleInfo,
   DmCode,
   DmRef,
@@ -81,6 +82,45 @@ function readReasonForUpdates(status: Element): ReasonForUpdate[] {
     }
     if (Object.keys(rest).length > 0) item.attrs = rest;
     out.push(item);
+  }
+  return out;
+}
+
+/** `dmStatus/controlAuthorityGroup` の `controlAuthority` を、並びの順に読む。値は解釈しない */
+function readControlAuthorities(status: Element, engine: XmlEngine): ControlAuthority[] {
+  const out: ControlAuthority[] = [];
+  for (const group of childElements(status)) {
+    if (group.nodeName !== 'controlAuthorityGroup') continue;
+    for (const el of childElements(group)) {
+      if (el.nodeName !== 'controlAuthority') continue;
+      const item: ControlAuthority = {};
+      const rest: Record<string, string> = {};
+      for (const a of Array.from(el.attributes)) {
+        if (a.value === '') continue;
+        if (a.name === 'id') item.id = a.value;
+        else if (a.name === 'controlAuthorityType') item.type = a.value;
+        else if (a.name === 'controlAuthoritySource') item.source = a.value;
+        else if (a.name === 'controlAuthorityValue') item.value = a.value;
+        else if (a.name === 'applicRefId') item.applicRefId = a.value;
+        else rest[a.name] = a.value;
+      }
+      for (const c of childElements(el)) {
+        if (c.nodeName === 'controlAuthorityText') {
+          const text = childElements(c)
+            .map((p) => reasonParagraphText(p))
+            .join('\n');
+          if (text !== '') item.text = text;
+        } else if (c.nodeName === 'dmRef') {
+          const ref = readDmRef(c, engine);
+          if (ref.ok) item.dmRef = ref.value;
+        } else if (c.nodeName === 'symbol') {
+          const icn = attr(c, 'infoEntityIdent');
+          if (icn) (item.symbols ??= []).push(icn);
+        }
+      }
+      if (Object.keys(rest).length > 0) item.attrs = rest;
+      out.push(item);
+    }
   }
   return out;
 }
@@ -212,6 +252,8 @@ export function readIdentAndStatus(
     }
     const qa = firstElement(engine, 'qualityAssurance/*', status);
     if (qa) value.qualityAssurance = qa.nodeName;
+    const authorities = readControlAuthorities(status, engine);
+    if (authorities.length > 0) value.controlAuthorities = authorities;
     const reasons = readReasonForUpdates(status);
     if (reasons.length > 0) value.reasonForUpdates = reasons;
   }

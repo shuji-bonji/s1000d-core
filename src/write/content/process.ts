@@ -12,6 +12,7 @@
  * （`if` は変数 1 つを参照するだけで、`question` を humanReadableForm に入れる）。
  * 読む側は content/read.ts の `dmSeq → sequence`・`dmNode → section`・`dmIf → if`・`dialog → dialog`。
  */
+import { compareIssues } from '../../schema-location.js';
 import type { Element } from '../../xml/engine.js';
 import { DraftInputError } from '../errors.js';
 import type { DraftNode } from '../types.js';
@@ -71,7 +72,17 @@ function dialog(w: Writer, node: DraftNode, path: string): Element {
 
 function dmNode(w: Writer, node: DraftNode, path: string): Element {
   const e = w.common(w.el('dmNode'), node);
-  if (node.title !== undefined) e.appendChild(w.textEl('title', node.title));
+  if (node.title !== undefined) {
+    // dmNode に title を置けるのは Issue 4.2 から（Issue 4.0・4.1 の process.xsd の dmNode には title が無い）
+    const issue = w.ctx.issue;
+    if (issue !== undefined && compareIssues(issue, '4.2') < 0) {
+      throw new DraftInputError(
+        `${path}/title`,
+        `a section of a process data module (it becomes a dmNode) cannot carry a title in S1000D Issue ${issue}; the title element is allowed in dmNode from Issue 4.2. Remove the title, or say it in a step inside the section.`,
+      );
+    }
+    e.appendChild(w.textEl('title', node.title));
+  }
   const refs = node.refs ?? [];
   const kids = w.childrenOf(node, 'section', path);
   if (refs.length > 0) {

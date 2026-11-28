@@ -14,9 +14,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import * as F from './__fixtures__/kenbaiki-drafts.js';
 import { measureTextCoverage } from './__fixtures__/text-coverage.js';
 import { findDefaultBrex } from './brex/index.js';
 import { findSchemaDirs, verifyDataModule } from './verify/index.js';
+import { buildDataModule } from './write/build.js';
+import { DraftInputError } from './write/errors.js';
+import type { DraftDataModule, DraftNode } from './write/types.js';
 import { Libxml2SchemaValidator } from './xsd-libxml2.js';
 
 const enabled = process.env.S1000D_SPEC_TESTS === '1';
@@ -163,6 +167,86 @@ describe.skipIf(!enabled)('配布物の Bike のサンプル（Issue 4.0・4.1�
           lost: 0,
           lostByParent: {},
         });
+      },
+      180_000,
+    );
+  }
+});
+
+/** 入力の誤りの位置（DraftInputError の path）。組み立てられたら undefined */
+function refusedAt(build: () => unknown): string | undefined {
+  try {
+    build();
+    return undefined;
+  } catch (e) {
+    if (e instanceof DraftInputError) return e.path;
+    throw e;
+  }
+}
+
+/** プロセスの節（dmNode になる節点）から題名を取り除いた下書き */
+function withoutSectionTitles(draft: DraftDataModule): DraftDataModule {
+  const strip = (n: DraftNode): DraftNode => ({
+    ...n,
+    ...(n.kind === 'section' ? { title: undefined } : {}),
+    ...(n.children ? { children: n.children.map(strip) } : {}),
+  });
+  return { ...draft, body: draft.body.map(strip) };
+}
+
+/**
+ * 作る側。自作の下書き 6 件を、版を指定して組み立て、その版の配布物の XSD にかける。
+ * その版に置けないと分かっているものは、組み立てずに入力の誤りにする（s1000d-stack の DECISIONS D-43）。
+ * 誤りにならずに組み立てられたものは、その版の XSD で valid になる。
+ */
+describe.skipIf(!enabled)('版を指定して組み立てた XML を、その版の XSD にかける', () => {
+  const cases: Array<{ issue: string; dir: string; refused: Record<string, string> }> = [
+    { issue: '4.2', dir: 'issue-4.2', refused: {} },
+    // dmNode に title を置けるのは Issue 4.2 から
+    { issue: '4.1', dir: 'issue-4.1', refused: { process: '/title' } },
+    // pmStatus に brexDmRef があるのは Issue 4.1 から
+    { issue: '4.0', dir: 'issue-4.0', refused: { process: '/title', pm: '/kind' } },
+  ];
+  for (const c of cases) {
+    const spec = join(specRoot, c.dir);
+    it.skipIf(!existsSync(spec))(
+      `Issue ${c.issue}: 置けないものは入力の誤りになり、組み立てられたものは valid`,
+      async () => {
+        const schemaDirs = findSchemaDirs([spec]);
+        const drafts: Array<[string, DraftDataModule]> = [
+          ['descript', F.descriptDraft()],
+          ['descriptLists', F.descriptListsDraft()],
+          ['proced', F.procedDraft()],
+          ['process', F.processDraft()],
+          ['processWithoutSectionTitles', withoutSectionTitles(F.processDraft())],
+          ['fault', F.faultDraft()],
+          ['pm', F.pmDraft()],
+        ];
+        const refused: Record<string, string> = {};
+        const invalid: Record<string, string[]> = {};
+        let allocation = F.kenbaikiAllocation();
+        for (const [name, draft] of drafts) {
+          let built;
+          const at = refusedAt(() => {
+            built = buildDataModule(draft, allocation, { specDirs: [spec], issue: c.issue });
+          });
+          if (at !== undefined) {
+            refused[name] = at.replace(/^.*(\/title)$/, '$1');
+            continue;
+          }
+          const r = built as unknown as ReturnType<typeof buildDataModule>;
+          allocation = {
+            ...allocation,
+            ledger: r.ledger,
+            icn: { ...allocation.icn, next: r.icnNext },
+          };
+          const v = await verifyDataModule(r.xml, { schema: { schemaDirs, validator } });
+          expect(v.status.schema.issue).toBe(c.issue);
+          if (v.status.schema.state !== 'valid')
+            invalid[name] = (v.schema?.errors ?? []).map((e) => e.message.slice(0, 120));
+        }
+        expect(invalid).toEqual({});
+        expect(refused).toEqual(c.refused);
       },
       180_000,
     );

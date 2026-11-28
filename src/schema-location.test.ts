@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BUILD_ISSUE,
   buildSchemaLocation,
+  compareIssues,
   isIssueString,
   parseSchemaLocation,
 } from './schema-location.js';
@@ -42,5 +43,18 @@ describe('isIssueString', () => {
     expect(isIssueString('4-2')).toBe(false);
     expect(isIssueString(7)).toBe(false);
     expect(isIssueString(undefined)).toBe(false);
+  });
+});
+
+describe('compareIssues', () => {
+  it('区切りごとに数として比べる', () => {
+    const order = ['4.0', '4.0.1', '4.0.2', '4.1', '4.2', '5.0', '6', '7'];
+    for (let i = 0; i < order.length - 1; i++) {
+      expect(compareIssues(order[i]!, order[i + 1]!)).toBeLessThan(0);
+      expect(compareIssues(order[i + 1]!, order[i]!)).toBeGreaterThan(0);
+    }
+    expect(compareIssues('4', '4.0')).toBe(0);
+    expect(compareIssues('4.10', '4.9')).toBeGreaterThan(0);
+    expect(() => compareIssues('4-2', '7')).toThrowError(RangeError);
   });
 });

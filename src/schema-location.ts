@@ -52,3 +52,20 @@ export function buildSchemaLocation(
     );
   return `http://www.s1000d.org/S1000D_${issue.replace(/\./g, '-')}/xml_schema_flat/${schemaName}.xsd`;
 }
+
+/**
+ * 2 つの版の前後を比べる（"4.0" < "4.0.1" < "4.1" < "4.2" < "5.0" < "6" < "7"）。
+ * a が前なら負、同じなら 0、後なら正。区切りごとに数として比べ、足りない区切りは 0 とみなす（"4" と "4.0" は同じ）。
+ * 版の書き方として読めないものを渡したときは RangeError。
+ */
+export function compareIssues(a: string, b: string): number {
+  if (!isIssueString(a) || !isIssueString(b))
+    throw new RangeError(`issue must look like "7" or "4.2": ${String(a)}, ${String(b)}`);
+  const x = a.split('.').map(Number);
+  const y = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}

@@ -20,7 +20,12 @@ import { findDefaultBrex } from '../brex/locate.js';
 import type { CsdbIndex } from '../csdb-index.js';
 import { formatDmc, formatDmcFileName } from '../dmc.js';
 import { formatPmc } from '../pmc.js';
-import { DEFAULT_BUILD_ISSUE, buildSchemaLocation, isIssueString } from '../schema-location.js';
+import {
+  DEFAULT_BUILD_ISSUE,
+  buildSchemaLocation,
+  compareIssues,
+  isIssueString,
+} from '../schema-location.js';
 import type { DmCode, DmRef, IssueInfo, PmCode } from '../types.js';
 import type { Document, Element } from '../xml/engine.js';
 import { allocateDmc, allocateIcn, allocatePmc } from './allocate.js';
@@ -56,9 +61,10 @@ export interface BuildOptions {
   issuePolicy?: IssuePolicy;
   /**
    * 対象とする S1000D の版（"7"、"4.2" など。既定 "7"）。`xsi:noNamespaceSchemaLocation` の URL の版になる。
-   * 変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じ。その版に無い要素
-   * （Issue 4.2 では `hazards`・`safetyInformation`・`infoNameVariant` など）が出力に入るかは、ここでは調べない。
-   * その版の XSD での検証で分かる。版の書き方として読めないときは DraftInputError（`/options/issue`）
+   * 変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じ。Issue 4.2・4.1・4.0 に置けないと
+   * 分かっているもの（Issue 4.2 より前のプロセスの節の題名、Issue 4.1 より前の PM）は、組み立てずに
+   * DraftInputError にする。ほかの版では調べないので、その版の XSD での検証で確かめる。
+   * 版の書き方として読めないときは DraftInputError（`/options/issue`）
    */
   issue?: string;
   /** issueDate の既定（今日）を決める時計。テスト用 */
@@ -236,8 +242,16 @@ export function buildDataModule(
     );
   if (issue !== DEFAULT_BUILD_ISSUE)
     notes.push(
-      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). Validate against the Issue ${issue} XSD to see whether all of them exist in that issue.`,
+      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). What is known not to fit Issue 4.2, 4.1 or 4.0 is refused as an input error before building; for other issues, validate against the Issue ${issue} XSD.`,
     );
+
+  // その版に置けないと分かっているものは、組み立てずに入力の誤りにする（D-43）
+  if (isPm && compareIssues(issue, '4.1') < 0) {
+    throw new DraftInputError(
+      '/kind',
+      `a publication module cannot be built for S1000D Issue ${issue} yet: pmStatus has no brexDmRef before Issue 4.1, and this builder always writes one. Build it for Issue 4.1 or later.`,
+    );
+  }
 
   // 1. 識別: DMC / PMC
   let ledger: Record<string, string> = { ...(allocation.ledger ?? {}) };
@@ -330,6 +344,7 @@ export function buildDataModule(
   const content = buildContent(draft.kind, draft.body, {
     document: doc,
     notes,
+    issue,
     resolveIcn: (target, _kind, path) => {
       if (icns[target]) return icns[target];
       let a;

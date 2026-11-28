@@ -18,7 +18,12 @@
  */
 import { DOMImplementation, XMLSerializer } from '@xmldom/xmldom';
 import { findDefaultBrex } from '../brex/locate.js';
-import { DEFAULT_BUILD_ISSUE, buildSchemaLocation, isIssueString } from '../schema-location.js';
+import {
+  DEFAULT_BUILD_ISSUE,
+  buildSchemaLocation,
+  compareIssues,
+  isIssueString,
+} from '../schema-location.js';
 import type { CsdbIndex } from '../csdb-index.js';
 import { parseDmc } from '../dmc.js';
 import { parseDdnCode, parseDmlCode } from '../dml/code.js';
@@ -389,8 +394,16 @@ export function buildComment(
     );
   if (issue !== DEFAULT_BUILD_ISSUE)
     notes.push(
-      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). Validate against the Issue ${issue} XSD to see whether all of them exist in that issue.`,
+      `issue: built for S1000D Issue ${issue} (only xsi:noNamespaceSchemaLocation differs; the elements and attributes are the ones written for Issue 7). What is known not to fit Issue 4.2, 4.1 or 4.0 is refused as an input error before building; for other issues, validate against the Issue ${issue} XSD.`,
     );
+
+  // その版に置けないと分かっているものは、組み立てずに入力の誤りにする（s1000d-stack の DECISIONS D-43）
+  if (compareIssues(issue, '4.1') < 0) {
+    throw new CommentInputError(
+      '/options/issue',
+      `a comment cannot be built for S1000D Issue ${issue} yet: commentStatus has no brexDmRef before Issue 4.1, and this builder always writes one. Build it for Issue 4.1 or later.`,
+    );
+  }
 
   // 1. 入力の検査（列挙は形だけ。意味は付けない）
   if (!COMMENT_TYPES.includes(input.commentType)) {

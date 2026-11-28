@@ -711,3 +711,16 @@ describe('buildComment: 対象とする S1000D の版（options.issue）', () =>
     }
   });
 });
+
+describe('buildComment: その版に置けないものは、組み立てずに入力の誤りにする', () => {
+  it('Issue 4.1 より前の版では組み立てない（commentStatus に brexDmRef が無い）', () => {
+    expect(() => buildComment(base(), { ...opts(), issue: '4.1' })).not.toThrow();
+    try {
+      buildComment(base(), { ...opts(), issue: '4.0' });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(CommentInputError);
+      expect((e as CommentInputError).path).toBe('/options/issue');
+    }
+  });
+});

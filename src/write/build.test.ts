@@ -1199,3 +1199,36 @@ describe('buildDataModule: 対象とする S1000D の版（options.issue）', ()
     }
   });
 });
+
+describe('buildDataModule: その版に置けないものは、組み立てずに入力の誤りにする', () => {
+  const brex = { defaultBrexRef: { dmCode: defaultBrex } };
+  const pathOf = (f: () => unknown): string | undefined => {
+    try {
+      f();
+      return undefined;
+    } catch (e) {
+      expect(e).toBeInstanceOf(DraftInputError);
+      return (e as DraftInputError).path;
+    }
+  };
+  it('プロセスの節（dmNode になる）の題名は、Issue 4.2 より前の版では置けない', () => {
+    const build = (issue?: string) =>
+      buildDataModule(F.processDraft(), F.kenbaikiAllocation(), { ...brex, issue });
+    expect(pathOf(() => build())).toBeUndefined();
+    expect(pathOf(() => build('4.2'))).toBeUndefined();
+    expect(pathOf(() => build('4.1'))).toMatch(/\/title$/);
+    expect(pathOf(() => build('4.0'))).toMatch(/\/title$/);
+    try {
+      build('4.1');
+    } catch (e) {
+      expect((e as DraftInputError).detail).toContain('Issue 4.1');
+    }
+  });
+  it('パブリケーションモジュールは、Issue 4.1 より前の版では組み立てない（pmStatus に brexDmRef が無い）', () => {
+    const build = (issue: string) =>
+      buildDataModule(F.pmDraft(), F.kenbaikiAllocation(), { ...brex, issue });
+    expect(pathOf(() => build('4.1'))).toBeUndefined();
+    expect(pathOf(() => build('4.0'))).toBe('/kind');
+    expect(pathOf(() => build('4.0.1'))).toBe('/kind');
+  });
+});

@@ -44,6 +44,11 @@ export interface BuildContentContext {
   onAsset?: (use: AssetUse) => void;
   /** 組み立てで補った点・動かした点の注記の出力先 */
   notes?: string[];
+  /**
+   * 対象とする S1000D の版（`BuildOptions.issue`）。省略は "7"。その版の XSD に置けないと分かっているものは、
+   * 組み立てずに DraftInputError にする（黙って落とさない。s1000d-stack の DECISIONS D-43）
+   */
+  issue?: string;
 }
 
 /** 親の種類（'body' は `DraftDataModule.body` の直下） */

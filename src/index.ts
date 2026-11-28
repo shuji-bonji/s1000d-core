@@ -21,6 +21,7 @@ export { formatIcn, parseIcn, parseIcnFileName } from './icn.js';
 export {
   DEFAULT_BUILD_ISSUE,
   buildSchemaLocation,
+  compareIssues,
   isIssueString,
   parseSchemaLocation,
   type SchemaLocationInfo,

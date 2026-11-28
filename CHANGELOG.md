@@ -22,10 +22,12 @@ S1000D Issue 4.2・4.1・4.0 の配布物で動かした結果（s1000d-stack �
 - **`buildDataModule` と `buildComment` に、対象とする S1000D の版の指定（`options.issue`）を足しました。** `"4.2"` を渡すと、`xsi:noNamespaceSchemaLocation` が `http://www.s1000d.org/S1000D_4-2/xml_schema_flat/<種類>.xsd` になります。省くと、これまでと同じ Issue 7 の URL です。変わるのは URL だけで、組み立てる要素と属性は Issue 7 のものと同じです。その版に無い要素（Issue 4.2 では `hazards`・`safetyInformation`・`infoNameVariant` など）が出力に入るかは調べません。その版の XSD での検証で分かります。`"7"` 以外を渡したときは、`notes` にこのことを書きます。版の書き方として読めない値（`"4-2"` など）は、`DraftInputError`・`CommentInputError`（`/options/issue`）にします。
 - 結果（`BuildResult`・`CommentBuildResult`）に、対象にした版（`issue`）を足しました。発行番号の `issueInfo` とは別のものです。
 - **`readContent`・`readContentFromXml` の結果に、内容部の先頭の参照の一覧（`refs`）を足しました**（[shuji-bonji/s1000d-stack#24](https://github.com/shuji-bonji/s1000d-stack/issues/24)）。`content/refs` に書かれた参照を、書かれた順に返します。`content/refs` が無い DM には付きません。これまでは、この一覧の `dmRef` が題名（`dmRefAddressItems/dmTitle`）を持っていても、結果のどこにも入らず、`notReadElements` にも出ませんでした。Issue 4.0 の Bike data set で 94 個、Issue 4.1 で 69 個のテキスト節点を落としていたのが、どちらも 0 になりました。`blocks` は変わりません。
+- **Issue 4.0 の DML を読めるようにしました**（[shuji-bonji/s1000d-stack#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。Issue 4.0 では、項目の要素が `dmEntry`、属性が `dmEntryType` です（Issue 4.1 から `dmlEntry`・`dmlEntryType`）。`readDml` は、どちらも同じ行（`DmlEntry`）として返します。これまでは、Issue 4.0 の DML の項目を 1 つも読めませんでした。
 - 版とスキーマ名から URL を作る `buildSchemaLocation`、版の書き方を確かめる `isIssueString`、既定の版 `DEFAULT_BUILD_ISSUE`（`"7"`）を公開しました。`buildSchemaLocation` は `parseSchemaLocation` の逆です。
 
 ### テスト
 
+- **配布物付きのテストに、Issue 4.0・4.1・4.2・7 の Bike のサンプルの数を足しました**（`src/issues.spec.test.ts`。[shuji-bonji/s1000d-stack#27](https://github.com/shuji-bonji/s1000d-stack/issues/27)・[#28](https://github.com/shuji-bonji/s1000d-stack/issues/28)）。版ごとに、XML の数、BOM で始まる数、XSD で `valid` になる数、見つかる XSD の版、既定 BREX、本文を構造として読む DM の数とテキスト節点の数を固定します。読めない文書と、読み取りの結果に無いテキスト節点は、どの版でも 0 です。配布物の場所は `S1000D_SPEC_ROOT`（既定は `../../specs/s1000d`）で、無い版は飛ばします。
 - 配布物付きのテスト（`S1000D_SPEC_TESTS=1`）の `brex-known-refs.test.ts` の (d) が、0.16.0 から落ちていました。仕様書への参照を未解決に数えなくなったのに、期待する数が古いままでした。期待する数を直しました。
 
 ## 0.18.0 (2026-11-24)

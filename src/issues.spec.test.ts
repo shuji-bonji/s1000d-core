@@ -1,0 +1,170 @@
+/**
+ * 利用者が入手した S1000D の配布物（Issue 4.0・4.1・4.2・7）の Bike のサンプルで、読む側と検証する側の数を固定する。
+ * 配布物は再配布できないため（DECISIONS D-03）、`S1000D_SPEC_TESTS=1` のときだけ動かす。
+ *
+ * 場所は `S1000D_SPEC_ROOT`（既定: ../../specs/s1000d — s1000d-stack の配置に合わせた相対パス）の下の
+ * `issue-4.0`・`issue-4.1`・`issue-4.2`・`issue-7`。展開のしかたは s1000d-stack の docs/notes/background.md の
+ * 「仕様書の展開後のファイル構成」に合わせる。無い版は飛ばす。
+ *
+ * 数は 2026-11-28 の実測（s1000d-stack の docs/notes/issue-4.2-survey.md、issue-4.0-4.1-survey.md）。
+ * - 読めない文書は 0（Issue 4.0 は XML 195 件のうち 126 件が BOM で始まる）
+ * - 本文を構造として読む DM で、読み取りの結果に無いテキスト節点は 0（読む側は内容を落とさない。D-31）
+ * 減らす方向・増やす方向のどちらに動いても、理由を確かめてから数を直す。
+ */
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { measureTextCoverage } from './__fixtures__/text-coverage.js';
+import { findDefaultBrex } from './brex/index.js';
+import { findSchemaDirs, verifyDataModule } from './verify/index.js';
+import { Libxml2SchemaValidator } from './xsd-libxml2.js';
+
+const enabled = process.env.S1000D_SPEC_TESTS === '1';
+const specRoot = resolve(process.env.S1000D_SPEC_ROOT ?? '../../specs/s1000d');
+
+interface Expected {
+  issue: string;
+  /** 配布物を展開したフォルダー（`specRoot` から） */
+  dir: string;
+  /** サンプルの CSDB（`dir` から）。サブフォルダーも見る */
+  csdb: string;
+  /** XML の数、そのうち BOM で始まるもの */
+  xml: number;
+  bom: number;
+  /** XSD の検証の結果 */
+  valid: number;
+  schemaNotFound: number;
+  /** 見つかる xml_schema_flat/ の版（見つかる順） */
+  schemaIssues: string[];
+  /** 既定 BREX のファイル名の先頭（DMC と発行番号） */
+  defaultBrex: string;
+  /** 本文を構造として読む DM の数と、そのテキスト節点の数 */
+  measured: number;
+  textNodes: number;
+}
+
+const EXPECTED: Expected[] = [
+  {
+    issue: '4.0',
+    dir: 'issue-4.0',
+    csdb: 'bike-data-set',
+    xml: 195,
+    bom: 126,
+    valid: 194,
+    // 版の書かれていない SMC（scormcontentpackage）。3 つの版のどれにも XSD があるので決まらない
+    schemaNotFound: 1,
+    schemaIssues: ['4.0.1', '4.0.2', '4.0'],
+    defaultBrex: 'DMC-S1000D-A-04-10-0301-00A-022A-D_005-00',
+    measured: 58,
+    textNodes: 1692,
+  },
+  {
+    issue: '4.1',
+    dir: 'issue-4.1',
+    csdb: 'bike-data-set',
+    xml: 103,
+    bom: 1,
+    valid: 103,
+    schemaNotFound: 0,
+    // 版が同じで中身の違う XSD が 3 組ある（Patch 4.1.A、直下、XML Schema Package）
+    schemaIssues: ['4.1', '4.1', '4.1'],
+    defaultBrex: 'DMC-S1000D-E-04-10-0301-00A-022A-D_013-00',
+    measured: 58,
+    textNodes: 1495,
+  },
+  {
+    issue: '4.2',
+    dir: 'issue-4.2',
+    csdb: 'bike-sample-data-set',
+    xml: 105,
+    bom: 0,
+    valid: 105,
+    schemaNotFound: 0,
+    schemaIssues: ['4.2'],
+    defaultBrex: 'DMC-S1000D-F-04-10-0301-00A-022A-D_002-00',
+    measured: 58,
+    textNodes: 1458,
+  },
+  {
+    issue: '7',
+    dir: 'issue-7',
+    csdb: 'bike-samples',
+    xml: 118,
+    bom: 0,
+    valid: 118,
+    schemaNotFound: 0,
+    schemaIssues: ['7'],
+    defaultBrex: 'DMC-S1000D-J-04-10-0301-00A-022A-D_001-00',
+    measured: 59,
+    textNodes: 1587,
+  },
+];
+
+const walk = (d: string, out: string[] = []): string[] => {
+  for (const n of readdirSync(d)) {
+    const p = join(d, n);
+    if (statSync(p).isDirectory()) walk(p, out);
+    else if (/\.xml$/i.test(n)) out.push(p);
+  }
+  return out;
+};
+
+const validator = new Libxml2SchemaValidator();
+afterAll(() => validator.dispose());
+
+describe.skipIf(!enabled)('配布物の Bike のサンプル（Issue 4.0・4.1・4.2・7）', () => {
+  for (const e of EXPECTED) {
+    const spec = join(specRoot, e.dir);
+    const csdb = join(spec, e.csdb);
+    it.skipIf(!existsSync(csdb))(
+      `Issue ${e.issue}: 読めない文書が無く、XSD の検証と本文の読み取りの数が記録どおり`,
+      async () => {
+        const schemaDirs = findSchemaDirs([spec]);
+        expect(schemaDirs.map((d) => d.issue)).toEqual(e.schemaIssues);
+        expect(basename(findDefaultBrex([spec])?.path ?? '')).toContain(e.defaultBrex);
+
+        const got = { xml: 0, bom: 0, unreadable: [] as string[], valid: 0, schemaNotFound: 0 };
+        const cov = {
+          measured: 0,
+          textNodes: 0,
+          lost: 0,
+          lostByParent: {} as Record<string, number>,
+        };
+        for (const p of walk(csdb).sort()) {
+          const xml = readFileSync(p, 'utf8');
+          got.xml++;
+          if (xml.charCodeAt(0) === 0xfeff) got.bom++;
+          const v = await verifyDataModule(xml, { path: p, schema: { schemaDirs, validator } });
+          if (!v.status.wellFormed) {
+            got.unreadable.push(basename(p));
+            continue;
+          }
+          if (v.status.schema.state === 'valid') got.valid++;
+          else if (v.status.schema.state === 'schema-not-found') got.schemaNotFound++;
+          if (!/^DMC-/i.test(basename(p))) continue;
+          const c = measureTextCoverage(xml);
+          if (!c) continue;
+          cov.measured++;
+          cov.textNodes += c.total;
+          cov.lost += c.lost;
+          for (const [k, n] of Object.entries(c.lostByParent))
+            cov.lostByParent[k] = (cov.lostByParent[k] ?? 0) + n;
+        }
+        expect(got).toEqual({
+          xml: e.xml,
+          bom: e.bom,
+          unreadable: [],
+          valid: e.valid,
+          schemaNotFound: e.schemaNotFound,
+        });
+        expect(cov).toEqual({
+          measured: e.measured,
+          textNodes: e.textNodes,
+          lost: 0,
+          lostByParent: {},
+        });
+      },
+      180_000,
+    );
+  }
+});

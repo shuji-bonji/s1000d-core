@@ -252,3 +252,20 @@ describe('reconcileDdn', () => {
     expect(r.counts.found).toBe(2);
   });
 });
+
+describe('Issue 4.0 の DML（項目の要素が dmEntry、属性が dmEntryType）', () => {
+  it('dmlEntry と同じ行として読む', () => {
+    const old = DML.replace(/<dmlEntry\b/g, '<dmEntry')
+      .replace(/<\/dmlEntry>/g, '</dmEntry>')
+      .replace(/dmlEntryType=/g, 'dmEntryType=')
+      .replace('S1000D_7/', 'S1000D_4-0/');
+    expect(old).toContain('<dmEntry dmEntryType="n">');
+    const a = readDml(DML);
+    const b = readDml(old);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    const strip = (es: typeof a.value.entries) => es.map((e) => ({ ...e, location: undefined }));
+    expect(strip(b.value.entries)).toEqual(strip(a.value.entries));
+    expect(b.value.entries[0]?.dmlEntryType).toBe('n');
+  });
+});

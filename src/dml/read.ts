@@ -96,7 +96,8 @@ function titleOf(engine: XmlEngine, ctx: Node, base: string): string | undefined
 function readEntry(engine: XmlEngine, el: Element): DmlEntry | undefined {
   const base = {
     location: describeLocation(el),
-    dmlEntryType: attr(el, 'dmlEntryType'),
+    // Issue 4.0 では、項目の要素は `dmEntry`、属性は `dmEntryType`（Issue 4.1 から `dmlEntry`・`dmlEntryType`）
+    dmlEntryType: attr(el, 'dmlEntryType') ?? attr(el, 'dmEntryType'),
     issueType: attr(el, 'issueType'),
     securityClassification: attr(first(engine, 'security', el), 'securityClassification'),
     remarks: text(engine, 'remarks', el),
@@ -201,7 +202,7 @@ export function readDml(
       if (r.ok) value.brexDmRef = r.value;
     }
   }
-  for (const n of engine.selectNodes('dmlContent/dmlEntry', root)) {
+  for (const n of engine.selectNodes('dmlContent/dmlEntry | dmlContent/dmEntry', root)) {
     const entry = readEntry(engine, n as Element);
     if (entry) value.entries.push(entry);
   }

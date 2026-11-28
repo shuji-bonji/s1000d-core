@@ -41,7 +41,7 @@ export interface DdnFileName {
 
 export type DmlEntryKind = 'dm' | 'pm' | 'icn' | 'comment' | 'dml';
 
-/** DML の 1 行（`dmlEntry`）。参照の種類ごとに 1 つだけ入る */
+/** DML の 1 行（`dmlEntry`。Issue 4.0 では `dmEntry`）。参照の種類ごとに 1 つだけ入る */
 export interface DmlEntry {
   kind: DmlEntryKind;
   /** 人が読む対象（DMC・PMC・実体名・DML のコード） */
@@ -58,7 +58,7 @@ export interface DmlEntry {
   title?: string;
   /** `responsiblePartnerCompany/@enterpriseCode` と `enterpriseName` */
   responsiblePartnerCompany?: { enterpriseCode?: string; enterpriseName?: string };
-  /** `@dmlEntryType`（XSD の列挙は c / d / n）。解釈しない */
+  /** `@dmlEntryType`（XSD の列挙は c / d / n）。Issue 4.0 の `dmEntry` では `@dmEntryType`。解釈しない */
   dmlEntryType?: string;
   /** `@issueType` */
   issueType?: string;
